@@ -5,43 +5,34 @@ the corresponding phases land.
 
 ## Runtime topology
 
+The application is a stateless HTTP service (port `4000`) that serves both the API
+and the built SPA. It depends on three external services and writes structured
+JSON logs to stdout. How those are provisioned and exposed is deployment-specific
+and out of scope for this repo.
+
 ```mermaid
 flowchart LR
-  R[Reader Browser] -->|HTTPS| CF[Cloudflare]
-  E[Editor Browser] -->|HTTPS| CF
-  CF -->|Tunnel| CFD[cloudflared Deployment]
-  CFD -->|HTTP :4000| SVC[travel-blog Service]
-  SVC --> P1[Pod replica 1]
-  SVC --> P2[Pod replica 2]
-  P1 & P2 --> MGO[(MongoDB<br/>platform-database)]
-  P1 & P2 --> RDS[(Redis Sentinel<br/>platform-cache)]
-  P1 & P2 --> S3[(MinIO bucket<br/>platform-storage)]
-  P1 & P2 -->|stdout JSON| PT[Promtail → Loki]
-  CR[Backup CronJob] -->|mc mirror| S3
-  CR -->|restic| NAS[(NAS)]
+  R[Reader Browser] -->|HTTPS| RP[Reverse proxy / ingress]
+  E[Editor Browser] -->|HTTPS| RP
+  RP -->|HTTP :4000| SVC[travel-blog Service]
+  SVC --> P1[App replica 1]
+  SVC --> P2[App replica 2]
+  P1 & P2 --> MGO[(MongoDB)]
+  P1 & P2 --> RDS[(Redis)]
+  P1 & P2 --> S3[(S3-compatible object storage)]
+  P1 & P2 -->|stdout JSON logs| LOG[Log collector]
 ```
 
-## Repo / delivery topology
+## Delivery
 
-```mermaid
-flowchart TB
-  subgraph SRC[SimpleTravelBlog source repo - public]
-    CODE[packages/backend + frontend + shared]
-    GHA[.github/workflows]
-  end
-  subgraph DEP[the private deployment repo - private]
-    KUST[base/ + environments/dev,prod/]
-    APPSET[argocd/appsets/]
-  end
-  subgraph BOOT[the cluster bootstrap repo - already exists]
-    ROOT[argocd/apps/travelblog-root.yaml]
-  end
-  GHA -->|build+push| GHCR[(ghcr.io/khaddAle/simple-travel-blog)]
-  GHA -->|gh pr| DEP
-  ROOT -->|tracks| DEP
-  DEP -->|tag bump| ARGO[Argo CD]
-  ARGO -->|sync| CLUSTER[k3s cluster]
-```
+This repo produces a single artifact: a multi-stage `linux/arm64` container image.
+On a tagged release, CI builds that image and pushes it to a container registry
+(GHCR). That image is the only output this repo is responsible for.
+
+Deployment — orchestration manifests, ingress, TLS/exposure, secrets, backups, and
+environment wiring — is environment-specific and lives outside this repo. To run
+the app yourself you only need the image, a MongoDB, a Redis, an S3-compatible
+bucket, and the environment variables it validates at boot (`src/config.ts`).
 
 ## Request flow
 

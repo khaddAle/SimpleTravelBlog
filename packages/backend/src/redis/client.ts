@@ -4,8 +4,8 @@ import type { Config } from '../config.js';
 /**
  * Build ioredis options from config. Pure + exported so the
  * Sentinel-vs-single-node branching is unit-testable without opening a socket.
- * Prefers Sentinel (the HA topology) and falls back to a single
- * host/port for local dev.
+ * Prefers Sentinel (HA topology) and falls back to a single host/port for
+ * local dev.
  */
 export function buildRedisOptions(cfg: Config['redis']): RedisOptions {
   const base: RedisOptions = {

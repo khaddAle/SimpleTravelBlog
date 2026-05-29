@@ -16,11 +16,12 @@
 - No drag-and-drop block reorder; ▲/▼ only.
 - German-only UI strings; inline, no i18n framework.
 
-## Related repos
-- the platform repo — Mongo/MinIO/Redis/cloudflared/Argo CD platform.
-- an example workload repo   — example business-workload pattern (per-env namespaces).
-- the cluster bootstrap repo          — Ansible bootstrap + Argo CD root app-of-apps.
-- the private deployment repo (private) — this app's deploy manifests.
+## Deployment
+- This repo is the application only. It produces a single linux/arm64 container
+  image; on a tagged release CI builds and pushes that image to GHCR.
+- Deployment (manifests, ingress/tunnel, secrets, environment wiring) is
+  environment-specific and maintained in a separate private repository — out of
+  scope here. Keep environment specifics out of this repo and its docs.
 
 ## Output rules
 - No `any`. `unknown` only at JSON parse boundaries with immediate zod validation.
