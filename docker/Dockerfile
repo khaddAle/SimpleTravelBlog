@@ -35,16 +35,17 @@ RUN npm run build
 # self-contained.
 RUN npm prune --omit=dev
 
-# --- runtime: slim image with only the libvips/libheif runtime libraries ------
+# --- runtime: slim image carrying only the built app + prod node_modules ------
 FROM node:22.22.3-bookworm-slim
 ENV NODE_ENV=production \
     PORT=4000 \
     FRONTEND_DIST=/app/packages/frontend/dist
 
-# Shared libraries sharp/libvips load at runtime (HEIF decode included).
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      libvips42 libheif1 libwebp7 libde265-0 \
-    && rm -rf /var/lib/apt/lists/*
+# No image libraries are apt-installed: sharp's prebuilt binary statically bundles
+# its own libvips — including the HEIF/HEVC decoder (libheif + libde265) and WebP —
+# under node_modules/@img, so the system libvips42 was never loaded and only dragged
+# in heavy transitive deps (imagemagick, poppler, librsvg, …). Dropping it slims the
+# image substantially; HEIF decode is re-verified by the container smoke test.
 
 WORKDIR /app
 

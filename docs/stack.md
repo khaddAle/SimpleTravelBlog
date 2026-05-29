@@ -13,7 +13,7 @@ those are flagged **[fallback]** with the rejected "latest" in parentheses.
 | | Version | Notes |
 |---|---|---|
 | Node | `22.22.3` (Jod LTS) | ARM64 native. Pinned in `.nvmrc`, Docker base, CI setup-node. |
-| Base image | `node:22.22.3-bookworm-slim` (linux/arm64) | Debian apt provides libheif1 + libvips42 for sharp. Alpine rejected (patchy HEIF). |
+| Base image | `node:22.22.3-bookworm-slim` (linux/arm64) | glibc base for sharp's prebuilt `@img` binaries + argon2. sharp bundles its own libvips (incl. HEIF), so no image libs are apt-installed. Alpine (musl) rejected. |
 
 ## Backend dependencies
 | Package | Version | Why |
@@ -80,11 +80,16 @@ those are flagged **[fallback]** with the rejected "latest" in parentheses.
 | `@playwright/test` | `1.60.0` | E2E. |
 
 ## Image runtime libs (apt in Dockerfile)
-`libvips42`, `libheif1`, `libwebp7`, `libde265-0` — all from `debian:bookworm`.
+**None.** sharp's prebuilt binary statically bundles its own libvips — including
+the HEIF/HEVC decoder (libheif + libde265) and WebP — under `node_modules/@img`.
+The system `libvips42` was therefore never loaded and only dragged in heavy
+transitive deps (imagemagick, poppler, librsvg, …), so the runtime stage installs
+no image libraries. HEIF decode is re-verified by the container smoke test.
 
 ## Deliberately rejected
-- **Alpine base image** — HEIF support via apk is patchy; Debian bookworm ships
-  libheif1 cleanly.
+- **Alpine base image** — sharp's prebuilt `@img` binaries are glibc-built (musl
+  needs separate variants) and argon2 compiles cleanly against glibc; bookworm-slim
+  keeps the native toolchain simple.
 - **Drag-and-drop block reorder** — ▲/▼ only (target picture).
 - **i18n framework** — German-only, inline strings.
 - **Vitest workspace file** — removed in Vitest 4; we use root `vitest.config.ts`
