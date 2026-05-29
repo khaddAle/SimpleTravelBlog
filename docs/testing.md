@@ -48,6 +48,16 @@ Documented exclusions (bootstrap / glue, not meaningfully unit-testable):
   upload SSE stream is driven through an injectable `EventSourceFactory`.
   Bootstrap/glue (`main.ts`, `App.svelte`, `router.ts`) is excluded from
   coverage, mirroring the backend's `server.ts` exclusion.
+- **E2E harness**: `packages/backend/tests/e2e-harness.ts` boots the *real*
+  Fastify app against hermetic, in-process backing services so Playwright needs
+  no external infrastructure — an in-memory `MongoMemoryReplSet`, `ioredis-mock`,
+  the integration-test in-memory `ObjectStorage`, and the built
+  `packages/frontend/dist` served via `@fastify/static` (with an index.html
+  fallback for hash routes). One admin user is seeded. It is launched by
+  Playwright's `webServer` block via `tsx` and is distinct from the production
+  entrypoint (`src/server.ts`), which talks to real Mongo/Redis/MinIO. E2E specs
+  generate their own image fixtures (sharp) and use unique titles/filenames so
+  reruns and a reused dev server never collide.
 
 ## Running tests locally
 ```bash
@@ -56,8 +66,11 @@ npm test -- --coverage   # with the 80% gate
 npm test -- packages/backend/src/lib/shortId.test.ts   # one file
 npm run test:watch       # watch mode
 ```
-E2E (Phase 7+):
+E2E (Playwright):
 ```bash
-npm -w @stb/frontend exec playwright install --with-deps
-npx playwright test                                    # from tests/e2e
+npm run build            # build @stb/shared + @stb/frontend (harness serves dist)
+npx playwright install chromium   # one-time browser download
+npm run test:e2e         # boots the harness via webServer, runs all specs
 ```
+`npm run e2e:server` starts just the harness (port 4000) for manual poking. CI
+runs E2E nightly + on demand via `.github/workflows/e2e.yml`, not on every PR.
