@@ -1,0 +1,38 @@
+[
+  {
+    "id": 201,
+    "slug": "zugspitze-gipfel",
+    "date_gmt": "2019-07-14T07:30:00",
+    "media_type": "image",
+    "mime_type": "image/jpeg",
+    "source_url": "https://old.example.com/wp-content/uploads/2019/07/zugspitze.jpg",
+    "title": { "rendered": "zugspitze" },
+    "alt_text": "Gipfelkreuz im Morgenlicht",
+    "caption": { "rendered": "<p>Am Gipfel</p>" },
+    "media_details": { "width": 1600, "height": 1067 }
+  },
+  {
+    "id": 202,
+    "slug": "der-weg",
+    "date_gmt": "2019-07-14T07:35:00",
+    "media_type": "image",
+    "mime_type": "image/jpeg",
+    "source_url": "https://old.example.com/wp-content/uploads/2019/07/weg.jpg",
+    "title": { "rendered": "weg" },
+    "alt_text": "Der steinige Weg",
+    "caption": { "rendered": "" },
+    "media_details": { "width": 1200, "height": 800 }
+  },
+  {
+    "id": 305,
+    "slug": "strand-stromboli",
+    "date_gmt": "2020-09-02T11:00:00",
+    "media_type": "image",
+    "mime_type": "image/png",
+    "source_url": "https://old.example.com/wp-content/uploads/2020/09/stromboli.png",
+    "title": { "rendered": "stromboli" },
+    "alt_text": "Schwarzer Lavastrand",
+    "caption": { "rendered": "" },
+    "media_details": { "width": 2000, "height": 1333 }
+  }
+]

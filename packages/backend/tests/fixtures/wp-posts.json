@@ -1,0 +1,36 @@
+[
+  {
+    "id": 101,
+    "slug": "wanderung-zugspitze",
+    "status": "publish",
+    "date_gmt": "2019-07-14T07:30:00",
+    "modified_gmt": "2019-07-15T08:00:00",
+    "featured_media": 201,
+    "title": { "rendered": "Wanderung auf die Zugspitze &#8211; ein langer Tag" },
+    "content": {
+      "rendered": "<h2>Der Aufstieg</h2>\n<p>Wir starten fr&#252;h am Morgen, noch bevor die Sonne &#252;ber den Graten steht.</p>\n<figure class=\"wp-block-image size-large\"><img src=\"https://old.example.com/wp-content/uploads/2019/07/weg.jpg\" alt=\"Der Weg\" class=\"wp-image-202\"/><figcaption>Der steile Weg durch das Reintal</figcaption></figure>\n<p>Nach vier Stunden erreichen wir das <strong>H&#246;llental</strong>.</p>\n<blockquote class=\"wp-block-quote\"><p>Der Berg ruft &#8211; und wir folgen.</p></blockquote>\n<ul><li>Proviant eingepackt</li><li>Steigeisen dabei</li></ul>\n<hr/>\n<p>Am Gipfel angekommen, belohnt uns ein gewaltiger Ausblick.</p>"
+    }
+  },
+  {
+    "id": 102,
+    "slug": "abend-in-stromboli",
+    "status": "draft",
+    "date_gmt": "2020-09-02T18:45:00",
+    "modified_gmt": "2020-09-03T09:00:00",
+    "featured_media": 0,
+    "title": { "rendered": "Abend in Stromboli" },
+    "content": {
+      "rendered": "<p>Der Vulkan glüht in der D&#228;mmerung.</p>\n<p><img src=\"https://old.example.com/wp-content/uploads/2020/09/stromboli.png\" alt=\"Lavastrand\"/></p>"
+    }
+  },
+  {
+    "id": 103,
+    "slug": "leerer-entwurf",
+    "status": "draft",
+    "date_gmt": "2021-01-01T00:00:00",
+    "modified_gmt": "2021-01-01T00:00:00",
+    "featured_media": 0,
+    "title": { "rendered": "Leerer Entwurf" },
+    "content": { "rendered": "<p>&nbsp;</p>\n<div class=\"wp-block-spacer\"></div>" }
+  }
+]
