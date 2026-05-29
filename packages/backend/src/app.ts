@@ -16,6 +16,7 @@ import { registerImageRoutes } from './routes/images.js';
 import { registerUserRoutes } from './routes/users.js';
 import { registerSettingsRoutes } from './routes/settings.js';
 import { registerPublicRoutes } from './routes/public.js';
+import { registerSpaStatic } from './spa.js';
 
 export interface AppDeps {
   redis: Redis;
@@ -26,6 +27,12 @@ export interface AppDeps {
   storage?: ObjectStorage;
   /** Injectable for tests; defaults to a fresh in-process hub. */
   progress?: ProgressHub;
+  /**
+   * Absolute path to the built SPA (`packages/frontend/dist`). When set, the app
+   * also serves the static frontend with an index.html fallback for client
+   * routes. Omitted in API-only tests; set by the production entrypoint.
+   */
+  staticRoot?: string;
 }
 
 /**
@@ -63,6 +70,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerUserRoutes(app, ctx);
   registerSettingsRoutes(app, ctx);
   registerPublicRoutes(app, ctx);
+
+  // Registered last so the SPA wildcard never shadows the API routes above.
+  if (deps.staticRoot) {
+    await registerSpaStatic(app, { root: deps.staticRoot });
+  }
 
   return app;
 }
