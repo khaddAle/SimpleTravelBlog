@@ -196,3 +196,39 @@ Indexes: `User.username` unique · `Post.shortId` unique, `postDate -1`,
 - **Object storage** (`src/storage/s3.ts`): MinIO/S3 wrapper (put/get/delete),
   client injectable for tests.
 - **Config** (`src/config.ts`): zod env schema, fail-fast at boot.
+
+## Frontend (Svelte 5 SPA)
+
+`packages/frontend` is a Svelte 5 (runes) single-page app, hash-routed with
+`svelte-spa-router`. It talks only to the backend HTTP API; all state lives
+server-side.
+
+```mermaid
+flowchart TD
+  MAIN[main.ts] --> APP[App.svelte<br/>router + store init + accent theme]
+  APP --> ROUTER[router.ts]
+  ROUTER --> READER[Reader pages<br/>Landing · Post · Archive · MapPage · Search]
+  ROUTER --> ADMIN[Admin pages<br/>Login · PostList · PostEditor · Users · Settings · ImageLibrary]
+  READER --> CARD[PostCard] --> BR[BlockRenderer]
+  BR --> BLOCKS[Title/Subtitle/Paragraph/Image/Gallery/Quote/Divider]
+  ADMIN --> ED[editor/<br/>BlockEditor · MetadataSidebar · ImagePicker · MapPicker · UploadProgress]
+  READER & ADMIN --> API[lib/api.ts]
+  ED --> API
+  API -->|fetch + cookie + X-CSRF-Token| BE[(Backend API)]
+```
+
+- **`lib/api.ts`** — single typed client over `fetch` (credentials included,
+  CSRF header on mutations, `ApiError` carrying the parsed body for 409 etc.).
+- **Stores** (`lib/*.svelte.ts`) — `auth` (current user, `me()` on boot) and
+  `settings` (branding; `App.svelte` mirrors `accentColor` onto `--accent`).
+- **Block renderers** (`blocks/`) — one component per block type behind
+  `BlockRenderer`; reused by reader and editor preview.
+- **Editor** (`admin/editor/`) — `BlockEditor` (▲/▼ reorder only, insert,
+  delete), `ImagePicker` (paginated browse, filename filter, orphans toggle,
+  upload via SSE), `MapPicker` (Leaflet click + Nominatim search),
+  `UploadProgress` (consumes the upload SSE channel).
+- **Routing/guard** — admin routes redirect to `/login` when unauthenticated;
+  the editor reaches images/galleries through a Promise-based picker bridge.
+- All UI strings are German, inline (no i18n framework). Pure helpers
+  (`plaintext`, `dates`, `archive`, `posts`, `nominatim`) are unit-tested;
+  components use `@testing-library/svelte`. Leaflet is mocked in component tests.

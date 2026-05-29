@@ -41,6 +41,13 @@ Documented exclusions (bootstrap / glue, not meaningfully unit-testable):
   `PutObject` / `DeleteObject` parameters.
 - **Fixtures**: `packages/backend/tests/fixtures/` holds a GPS-tagged JPEG, a
   PNG, a HEIC, and the WordPress JSON corpus (`wp-posts.json`, `wp-media.json`).
+- **Frontend components**: the `svelteTesting()` Vite plugin (in
+  `packages/frontend/vitest.config.ts`) adds the `browser` resolve condition so
+  components mount via the client build, plus auto-cleanup. `fetch` is stubbed
+  with `vi.stubGlobal`; `leaflet` is `vi.mock`-ed (no real map in jsdom); the
+  upload SSE stream is driven through an injectable `EventSourceFactory`.
+  Bootstrap/glue (`main.ts`, `App.svelte`, `router.ts`) is excluded from
+  coverage, mirroring the backend's `server.ts` exclusion.
 
 ## Running tests locally
 ```bash
