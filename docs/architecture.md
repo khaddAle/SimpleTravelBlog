@@ -45,7 +45,40 @@ flowchart TB
 
 ## Request flow
 
-> Auth + image-pipeline sequence diagrams are added in Phase 4 / Phase 5.
+### Auth (login → CSRF-protected mutation → logout)
+
+Sessions live in Redis (`sess:<sid>` → `{userId, csrfSecret}`); the session id is
+delivered as a signed, HttpOnly, SameSite=Lax cookie. CSRF uses a double-submit
+token: the per-session `csrfSecret` is mirrored into a readable `csrf` cookie and
+must be echoed in `X-CSRF-Token` on mutations (verified constant-time against the
+session). Login is rate-limited per `<username>:<ip>` (6 failures / 15 min → 429).
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant F as Fastify
+  participant M as Mongo
+  participant R as Redis
+  B->>F: POST /api/auth/login { username, password }
+  F->>R: isLoginLimited(user:ip)?
+  F->>M: User.findOne({ username })
+  F->>F: argon2.verify(hash, password)
+  alt success
+    F->>R: clearLoginFailures · SET sess:<sid> {userId, csrfSecret} EX ttl
+    F-->>B: 200 + Set-Cookie sid (HttpOnly) + csrf (readable)
+  else fail
+    F->>R: INCR loginfails:<user>:<ip> (EX 900 on first)
+    F-->>B: 401 (or 429 once ≥6)
+  end
+  Note over B,F: later mutation
+  B->>F: POST /api/... (sid cookie + X-CSRF-Token header)
+  F->>R: GET sess:<sid>
+  F->>M: User.findById (reject if missing/deactivated)
+  F->>F: timingSafeEqual(session.csrfSecret, header)
+  F-->>B: 200 / 401 (no session) / 403 (bad CSRF)
+```
+
+> The image-pipeline sequence diagram is added in Phase 5.
 
 ## Data model
 
