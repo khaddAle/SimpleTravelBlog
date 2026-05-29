@@ -31,6 +31,11 @@ jobs:
         # prebuilt binaries, but ensure they are wired up for the runner arch.
         run: npm rebuild sharp argon2 || true
 
+      - name: Build shared package
+        # @stb/shared must emit its dist/.d.ts before backend/frontend tsc can
+        # resolve it. (Tests resolve it from source via a vitest alias.)
+        run: npm run build -w @stb/shared
+
       - name: Lint
         run: npm run lint
 

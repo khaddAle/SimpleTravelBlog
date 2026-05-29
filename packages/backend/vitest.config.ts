@@ -1,6 +1,13 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      // Resolve @stb/shared from source so tests don't depend on a prior build.
+      '@stb/shared': fileURLToPath(new URL('../shared/src/index.ts', import.meta.url)),
+    },
+  },
   test: {
     name: 'backend',
     environment: 'node',
