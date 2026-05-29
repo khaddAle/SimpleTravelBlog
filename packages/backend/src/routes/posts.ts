@@ -71,7 +71,11 @@ export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): voi
       lat: data.lat,
       lng: data.lng,
       ...(tripObjectId ? { tripId: new Types.ObjectId(tripObjectId) } : {}),
-      status: 'draft',
+      // Default to draft for interactive creates; the importer publishes on
+      // import by passing status + the original publishedAt (preserved by the
+      // model's pre-save hook, which only stamps publishedAt when unset).
+      status: data.status ?? 'draft',
+      ...(data.publishedAt ? { publishedAt: new Date(data.publishedAt) } : {}),
       authorId: new Types.ObjectId(req.authUser!.id),
     });
 

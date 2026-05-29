@@ -35,6 +35,7 @@ interface Args {
   password: string | undefined;
   dryRun: boolean;
   out: string;
+  limit: number | undefined;
   map: MapOptions;
 }
 
@@ -60,6 +61,9 @@ function parseArgs(argv: string[]): Args {
   if (place !== undefined) map.defaultPlaceName = place;
   if (lat !== undefined) map.defaultLat = lat;
   if (lng !== undefined) map.defaultLng = lng;
+  if (bare.has('as-draft')) map.asDraft = true;
+
+  const limit = num('limit');
 
   return {
     wpUrl: flags.get('wp-url'),
@@ -70,6 +74,7 @@ function parseArgs(argv: string[]): Args {
     password: flags.get('password'),
     dryRun: bare.has('dry-run'),
     out: flags.get('out') ?? 'migration-report.json',
+    limit: limit !== undefined && Number.isFinite(limit) ? limit : undefined,
     map,
   };
 }
@@ -244,7 +249,7 @@ async function main(): Promise<void> {
   const corpus = await loadCorpus(args);
   const posts = parseWpPosts(corpus.posts);
   const media = parseWpMedia(corpus.media);
-  const plan = planImport(posts, media, args.map);
+  const plan = planImport(posts, media, args.map, args.limit);
 
   process.stdout.write(`${renderReport(plan)}\n`);
 
@@ -252,10 +257,13 @@ async function main(): Promise<void> {
     dryRun: args.dryRun,
     counts: plan.counts,
     losses: plan.losses,
+    skipped: plan.skipped,
     posts: plan.mapped.map((m) => ({
       sourceId: m.sourceId,
       slug: m.slug,
       originalStatus: m.originalStatus,
+      status: m.request.status,
+      publishedAt: m.request.publishedAt,
       title: m.request.title,
     })),
   };

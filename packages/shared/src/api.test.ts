@@ -82,6 +82,28 @@ describe('createPostRequestSchema', () => {
       createPostRequestSchema.parse({ ...base, postDate: '2026-05-01' }),
     ).toThrow();
   });
+
+  it('accepts an optional status + publishedAt (importer publish-on-import)', () => {
+    const parsed = createPostRequestSchema.parse({
+      ...base,
+      status: 'published',
+      publishedAt: '2019-07-14T07:30:00.000Z',
+    });
+    expect(parsed.status).toBe('published');
+    expect(parsed.publishedAt).toBe('2019-07-14T07:30:00.000Z');
+  });
+
+  it('leaves status/publishedAt undefined for an interactive create (→ draft)', () => {
+    const parsed = createPostRequestSchema.parse(base);
+    expect(parsed.status).toBeUndefined();
+    expect(parsed.publishedAt).toBeUndefined();
+  });
+
+  it('rejects a non-datetime publishedAt', () => {
+    expect(() =>
+      createPostRequestSchema.parse({ ...base, publishedAt: '2019-07-14' }),
+    ).toThrow();
+  });
 });
 
 describe('updatePostRequestSchema', () => {

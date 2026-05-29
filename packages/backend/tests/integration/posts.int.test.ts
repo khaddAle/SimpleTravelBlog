@@ -111,6 +111,17 @@ describe('posts + trips integration', () => {
     expect(edited.body.post.publishedAt).toBe(firstPublishedAt);
   });
 
+  it('creates a post published-on-import, preserving the original publishedAt', async () => {
+    const original = '2019-07-14T07:30:00.000Z';
+    const created = await createPost(
+      postPayload({ status: 'published', publishedAt: original }),
+    );
+    expect(created.status).toBe(201);
+    expect(created.body.post.status).toBe('published');
+    // The pre-set original date is preserved (not re-stamped to "now").
+    expect(created.body.post.publishedAt).toBe(original);
+  });
+
   it('keeps the trip association when patching other fields', async () => {
     const trip = await createTrip('Alpen');
     const created = await createPost(postPayload({ tripId: trip.body.trip.id }));

@@ -56,6 +56,11 @@ export const postMetadataSchema = z.object({
 
 export const createPostRequestSchema = postMetadataSchema.extend({
   blocks: blockArraySchema,
+  // Optional lifecycle fields for the importer (publish-on-import). An
+  // interactive create omits both and the post is created as a draft with
+  // publishedAt stamped on first publish.
+  status: postStatusSchema.optional(),
+  publishedAt: z.string().datetime().optional(),
 });
 export type CreatePostRequest = z.infer<typeof createPostRequestSchema>;
 

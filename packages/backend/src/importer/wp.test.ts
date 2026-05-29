@@ -205,6 +205,19 @@ describe('mapPost', () => {
     const m = mapPost(orphan, index);
     expect(m.losses).toContainEqual({ kind: 'unresolved_image', detail: 'featured_media:9999' });
   });
+
+  it('maps as published with publishedAt = the original WP date by default', () => {
+    const m = mapPost(byId(101), index);
+    expect(m.request.status).toBe('published');
+    expect(m.request.publishedAt).toBe('2019-07-14T07:30:00.000Z');
+    expect(m.request.publishedAt).toBe(m.request.postDate);
+  });
+
+  it('maps as a draft without publishedAt when asDraft is set', () => {
+    const m = mapPost(byId(101), index, { asDraft: true });
+    expect(m.request.status).toBe('draft');
+    expect(m.request.publishedAt).toBeUndefined();
+  });
 });
 
 describe('finalizeBlocks', () => {
@@ -235,29 +248,80 @@ describe('planImport', () => {
   const posts = parseWpPosts(rawPosts);
   const media = parseWpMedia(rawMedia);
 
-  it('aggregates mapped posts, unique image sources, and slug-scoped losses', () => {
+  const makeWpPost = (
+    id: number,
+    slug: string,
+    status: string,
+    content = '<p>Inhalt</p>',
+  ): WpPost => ({
+    id,
+    slug,
+    status,
+    date_gmt: '2020-01-01T00:00:00',
+    featured_media: 0,
+    title: { rendered: slug },
+    content: { rendered: content },
+  });
+
+  it('imports only published posts, listing the rest as skipped', () => {
     const plan = planImport(posts, media);
-    expect(plan.mapped).toHaveLength(3);
-    expect(plan.counts.posts).toBe(3);
-    // zugspitze (cover) + weg (inline) + stromboli (inline) = 3 unique sources.
+    // Fixture: only 101 (wanderung-zugspitze) is published; 102 + 103 are drafts.
+    expect(plan.mapped).toHaveLength(1);
+    expect(plan.counts.posts).toBe(1);
+    expect(plan.mapped[0]?.slug).toBe('wanderung-zugspitze');
+    expect(plan.mapped[0]?.request.status).toBe('published');
+    // The two drafts are skipped (not mapped) but recorded for the report.
+    expect(plan.counts.skipped).toBe(2);
+    expect(plan.skipped).toEqual([
+      { sourceId: 102, slug: 'abend-in-stromboli', status: 'draft' },
+      { sourceId: 103, slug: 'leerer-entwurf', status: 'draft' },
+    ]);
+  });
+
+  it('collects only the images referenced by published posts', () => {
+    const plan = planImport(posts, media);
+    // zugspitze (cover) + weg (inline) belong to the published post; stromboli
+    // belongs to a skipped draft and is therefore never uploaded.
     expect(plan.imageSources).toEqual([
       'https://old.example.com/wp-content/uploads/2019/07/zugspitze.jpg',
       'https://old.example.com/wp-content/uploads/2019/07/weg.jpg',
-      'https://old.example.com/wp-content/uploads/2020/09/stromboli.png',
     ]);
-    expect(plan.counts.images).toBe(3);
-    // Every loss carries the originating slug.
-    expect(plan.losses.every((l) => typeof l.slug === 'string' && l.slug.length > 0)).toBe(true);
-    expect(plan.losses).toContainEqual({
-      slug: 'wanderung-zugspitze',
-      kind: 'unsupported_element',
-      detail: 'ul',
-    });
-    expect(plan.losses).toContainEqual({
-      slug: 'leerer-entwurf',
-      kind: 'empty_post',
-      detail: 'leerer-entwurf',
-    });
+    expect(plan.counts.images).toBe(2);
+  });
+
+  it('scopes losses to the published posts only', () => {
+    const plan = planImport(posts, media);
+    expect(plan.losses.every((l) => l.slug === 'wanderung-zugspitze')).toBe(true);
+    // The skipped draft "leerer-entwurf" no longer contributes its empty_post loss.
+    expect(plan.losses.some((l) => l.slug === 'leerer-entwurf')).toBe(false);
+  });
+
+  it('--limit caps the number of imported posts and their images', () => {
+    const corpus = [
+      makeWpPost(1, 'a', 'publish', '<p><img src="https://x/a.jpg"/></p>'),
+      makeWpPost(2, 'b', 'publish', '<p><img src="https://x/b.jpg"/></p>'),
+      makeWpPost(3, 'c', 'publish', '<p><img src="https://x/c.jpg"/></p>'),
+    ];
+    const plan = planImport(corpus, [], {}, 2);
+    expect(plan.mapped.map((m) => m.slug)).toEqual(['a', 'b']);
+    expect(plan.imageSources).toEqual(['https://x/a.jpg', 'https://x/b.jpg']);
+  });
+
+  it('applies the limit to published posts only and keeps the full skipped list', () => {
+    const corpus = [
+      makeWpPost(1, 'pub-1', 'publish'),
+      makeWpPost(2, 'draft-1', 'draft'),
+      makeWpPost(3, 'pub-2', 'publish'),
+    ];
+    const plan = planImport(corpus, [], {}, 1);
+    expect(plan.mapped.map((m) => m.slug)).toEqual(['pub-1']);
+    expect(plan.skipped).toEqual([{ sourceId: 2, slug: 'draft-1', status: 'draft' }]);
+  });
+
+  it('honours asDraft, importing published posts as drafts', () => {
+    const plan = planImport([makeWpPost(1, 'a', 'publish')], [], { asDraft: true });
+    expect(plan.mapped[0]?.request.status).toBe('draft');
+    expect(plan.mapped[0]?.request.publishedAt).toBeUndefined();
   });
 });
 
@@ -265,9 +329,14 @@ describe('renderReport', () => {
   it('renders a German human-readable dry-run summary', () => {
     const plan = planImport(parseWpPosts(rawPosts), parseWpMedia(rawMedia));
     const text = renderReport(plan);
-    expect(text).toMatch(/Beiträge:\s+3/);
-    expect(text).toMatch(/Bilder:\s+3/);
+    expect(text).toMatch(/Beiträge:\s+1/);
+    expect(text).toMatch(/Bilder:\s+2/);
     expect(text).toMatch(/Verluste|Hinweise/);
+  });
+
+  it('reports the number of skipped non-published posts', () => {
+    const plan = planImport(parseWpPosts(rawPosts), parseWpMedia(rawMedia));
+    expect(renderReport(plan)).toMatch(/Übersprungen.*2/);
   });
 
   it('reports "keine" when there are no losses', () => {

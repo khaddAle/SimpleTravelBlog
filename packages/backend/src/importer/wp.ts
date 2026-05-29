@@ -194,6 +194,8 @@ export interface MapOptions {
   defaultLat?: number;
   defaultLng?: number;
   fallbackTitle?: string;
+  /** Import as drafts instead of publishing on import (escape hatch). */
+  asDraft?: boolean;
 }
 
 export interface MappedPostRequest {
@@ -204,12 +206,16 @@ export interface MappedPostRequest {
   lat: number;
   lng: number;
   blocks: ImportBlock[];
+  /** 'published' by default (publish-on-import); 'draft' when `asDraft`. */
+  status: 'draft' | 'published';
+  /** Original WP publish date; set only for published imports, omitted for drafts. */
+  publishedAt?: string;
 }
 
 export interface MappedPost {
   sourceId: number;
   slug: string;
-  /** WP status, preserved for the report; imported posts are always drafts. */
+  /** WP status of the source post (only `publish` posts are ever mapped). */
   originalStatus: string;
   request: MappedPostRequest;
   losses: LocalLoss[];
@@ -253,11 +259,25 @@ export function mapPost(post: WpPost, media: MediaIndex, opts: MapOptions = {}):
   // WordPress carries no geo metadata; flag every post so the editor sets it.
   losses.push({ kind: 'location_missing', detail: post.slug });
 
+  const postDate = toIso(post.date_gmt);
+  const status: 'draft' | 'published' = opts.asDraft ? 'draft' : 'published';
+
   return {
     sourceId: post.id,
     slug: post.slug,
     originalStatus: post.status,
-    request: { title, postDate: toIso(post.date_gmt), country, placeName, lat, lng, blocks },
+    request: {
+      title,
+      postDate,
+      country,
+      placeName,
+      lat,
+      lng,
+      blocks,
+      status,
+      // Publish on import preserves the original WP date; drafts carry none.
+      ...(status === 'published' ? { publishedAt: postDate } : {}),
+    },
     losses,
   };
 }
@@ -290,16 +310,43 @@ export interface ImportLoss extends LocalLoss {
   slug: string;
 }
 
+/** A WP post excluded from the import because it is not published. */
+export interface SkippedPost {
+  sourceId: number;
+  slug: string;
+  status: string;
+}
+
 export interface ImportPlan {
   mapped: MappedPost[];
   imageSources: string[];
   losses: ImportLoss[];
-  counts: { posts: number; blocks: number; images: number };
+  skipped: SkippedPost[];
+  counts: { posts: number; blocks: number; images: number; skipped: number };
 }
 
-export function planImport(posts: WpPost[], media: WpMedia[], opts: MapOptions = {}): ImportPlan {
+/**
+ * Build the import plan. Only WordPress posts with `status: 'publish'` are
+ * imported; everything else is recorded in `skipped` (and never uploaded).
+ * `limit`, when given, caps the import to the first N published posts (and only
+ * their images) — handy for bounded dev trials. The skipped list is always
+ * complete regardless of the limit.
+ */
+export function planImport(
+  posts: WpPost[],
+  media: WpMedia[],
+  opts: MapOptions = {},
+  limit?: number,
+): ImportPlan {
   const index = buildMediaIndex(media);
-  const mapped = posts.map((p) => mapPost(p, index, opts));
+
+  const skipped: SkippedPost[] = posts
+    .filter((p) => p.status !== 'publish')
+    .map((p) => ({ sourceId: p.id, slug: p.slug, status: p.status }));
+
+  const published = posts.filter((p) => p.status === 'publish');
+  const selected = limit === undefined ? published : published.slice(0, Math.max(0, limit));
+  const mapped = selected.map((p) => mapPost(p, index, opts));
 
   const losses: ImportLoss[] = mapped.flatMap((m) =>
     m.losses.map((l) => ({ slug: m.slug, ...l })),
@@ -317,7 +364,8 @@ export function planImport(posts: WpPost[], media: WpMedia[], opts: MapOptions =
     mapped,
     imageSources,
     losses,
-    counts: { posts: mapped.length, blocks, images: imageSources.length },
+    skipped,
+    counts: { posts: mapped.length, blocks, images: imageSources.length, skipped: skipped.length },
   };
 }
 
@@ -329,6 +377,9 @@ export function renderReport(plan: ImportPlan): string {
     `  Blöcke:   ${plan.counts.blocks}`,
     `  Bilder:   ${plan.counts.images}`,
   ];
+  if (plan.skipped.length > 0) {
+    lines.push(`  Übersprungen (nicht veröffentlicht): ${plan.skipped.length}`);
+  }
   if (plan.losses.length === 0) {
     lines.push('  Verluste/Hinweise: keine');
   } else {
