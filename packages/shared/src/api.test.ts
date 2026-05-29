@@ -10,6 +10,12 @@ import {
   isoCountrySchema,
   latSchema,
   lngSchema,
+  queryBooleanSchema,
+  paginationQuerySchema,
+  imageListQuerySchema,
+  createUserRequestSchema,
+  updateUserRequestSchema,
+  imageVariantSchema,
 } from './api.js';
 
 describe('scalar schemas', () => {
@@ -115,5 +121,72 @@ describe('settingsDtoSchema', () => {
     expect(() =>
       settingsDtoSchema.parse({ siteTitle: 'Reise', accentColor: 'blue' }),
     ).toThrow();
+  });
+});
+
+describe('queryBooleanSchema', () => {
+  it('parses truthy tokens and treats "false"/absent as false', () => {
+    expect(queryBooleanSchema.parse('true')).toBe(true);
+    expect(queryBooleanSchema.parse('1')).toBe(true);
+    expect(queryBooleanSchema.parse(true)).toBe(true);
+    expect(queryBooleanSchema.parse('false')).toBe(false);
+    expect(queryBooleanSchema.parse('0')).toBe(false);
+    expect(queryBooleanSchema.parse(undefined)).toBe(false);
+  });
+});
+
+describe('paginationQuerySchema', () => {
+  it('coerces strings and applies defaults', () => {
+    expect(paginationQuerySchema.parse({})).toEqual({ page: 1, pageSize: 20 });
+    expect(paginationQuerySchema.parse({ page: '3', pageSize: '50' })).toEqual({
+      page: 3,
+      pageSize: 50,
+    });
+  });
+  it('rejects pageSize over the cap', () => {
+    expect(() => paginationQuerySchema.parse({ pageSize: '101' })).toThrow();
+  });
+});
+
+describe('imageListQuerySchema', () => {
+  it('defaults sort to newest and orphansOnly to false', () => {
+    const parsed = imageListQuerySchema.parse({});
+    expect(parsed.sort).toBe('newest');
+    expect(parsed.orphansOnly).toBe(false);
+  });
+  it('honors an explicit orphans filter', () => {
+    expect(imageListQuerySchema.parse({ orphansOnly: 'true' }).orphansOnly).toBe(true);
+  });
+});
+
+describe('createUserRequestSchema', () => {
+  it('requires an 8+ char password', () => {
+    expect(
+      createUserRequestSchema.parse({
+        username: 'editor2',
+        password: 'longenough',
+        role: 'editor',
+      }).username,
+    ).toBe('editor2');
+    expect(() =>
+      createUserRequestSchema.parse({ username: 'x', password: 'short', role: 'editor' }),
+    ).toThrow();
+  });
+});
+
+describe('updateUserRequestSchema', () => {
+  it('rejects an empty update', () => {
+    expect(() => updateUserRequestSchema.parse({})).toThrow();
+  });
+  it('accepts a single field', () => {
+    expect(updateUserRequestSchema.parse({ deactivated: true }).deactivated).toBe(true);
+  });
+});
+
+describe('imageVariantSchema', () => {
+  it('accepts display and thumb only', () => {
+    expect(imageVariantSchema.parse('display')).toBe('display');
+    expect(imageVariantSchema.parse('thumb')).toBe('thumb');
+    expect(() => imageVariantSchema.parse('original')).toThrow();
   });
 });

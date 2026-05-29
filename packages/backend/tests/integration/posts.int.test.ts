@@ -1,0 +1,177 @@
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import request from 'supertest';
+import type { FastifyInstance } from 'fastify';
+import type { Redis } from 'ioredis';
+import { useTestDatabase } from '../db.js';
+import { buildTestApp, authedAgent, type AuthedAgent } from '../helpers.js';
+
+describe('posts + trips integration', () => {
+  useTestDatabase();
+
+  let app: FastifyInstance;
+  let redis: Redis;
+  let auth: AuthedAgent;
+
+  beforeAll(async () => {
+    ({ app, redis } = await buildTestApp());
+  });
+  afterAll(async () => {
+    await app.close();
+  });
+  beforeEach(async () => {
+    await redis.flushall();
+    auth = await authedAgent(app);
+  });
+
+  const postPayload = (over: Record<string, unknown> = {}) => ({
+    title: 'Berge',
+    postDate: '2026-05-01T00:00:00.000Z',
+    country: 'DE',
+    placeName: 'Zugspitze',
+    lat: 47.42,
+    lng: 10.98,
+    blocks: [{ type: 'paragraph', text: 'Aufstieg zur Hütte' }],
+    ...over,
+  });
+
+  const createTrip = (name: string) =>
+    auth.agent.post('/api/trips').set('x-csrf-token', auth.csrf).send({ name });
+
+  const createPost = (body: Record<string, unknown>) =>
+    auth.agent.post('/api/posts').set('x-csrf-token', auth.csrf).send(body);
+
+  it('rejects an unauthenticated create with 401', async () => {
+    const res = await request(app.server).post('/api/posts').send(postPayload());
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects a create without the CSRF header with 403', async () => {
+    const res = await auth.agent.post('/api/posts').send(postPayload());
+    expect(res.status).toBe(403);
+  });
+
+  it('creates a draft post and lists/fetches it', async () => {
+    const created = await createPost(postPayload());
+    expect(created.status).toBe(201);
+    expect(created.body.post).toMatchObject({
+      title: 'Berge',
+      status: 'draft',
+      country: 'DE',
+    });
+    const id = created.body.post.id;
+    expect(id).toHaveLength(6);
+
+    const list = await auth.agent.get('/api/posts');
+    expect(list.status).toBe(200);
+    expect(list.body.posts).toHaveLength(1);
+
+    const one = await auth.agent.get(`/api/posts/${id}`);
+    expect(one.status).toBe(200);
+    expect(one.body.post.id).toBe(id);
+  });
+
+  it('404s an unknown post', async () => {
+    const res = await auth.agent.get('/api/posts/zzzzzz');
+    expect(res.status).toBe(404);
+  });
+
+  it('associates a trip by shortId and exposes it on the DTO', async () => {
+    const trip = await createTrip('Alpen 2026');
+    expect(trip.status).toBe(201);
+    const tripId = trip.body.trip.id;
+
+    const created = await createPost(postPayload({ tripId }));
+    expect(created.status).toBe(201);
+    expect(created.body.post.tripId).toBe(tripId);
+  });
+
+  it('rejects a post referencing an unknown trip with 400', async () => {
+    const res = await createPost(postPayload({ tripId: 'nope12' }));
+    expect(res.status).toBe(400);
+  });
+
+  it('publishes via PATCH and stamps publishedAt once', async () => {
+    const created = await createPost(postPayload());
+    const id = created.body.post.id;
+
+    const published = await auth.agent
+      .patch(`/api/posts/${id}`)
+      .set('x-csrf-token', auth.csrf)
+      .send({ status: 'published' });
+    expect(published.status).toBe(200);
+    expect(published.body.post.status).toBe('published');
+    expect(published.body.post.publishedAt).toBeTruthy();
+    const firstPublishedAt = published.body.post.publishedAt;
+
+    const edited = await auth.agent
+      .patch(`/api/posts/${id}`)
+      .set('x-csrf-token', auth.csrf)
+      .send({ title: 'Neuer Titel' });
+    expect(edited.body.post.title).toBe('Neuer Titel');
+    expect(edited.body.post.publishedAt).toBe(firstPublishedAt);
+  });
+
+  it('keeps the trip association when patching other fields', async () => {
+    const trip = await createTrip('Alpen');
+    const created = await createPost(postPayload({ tripId: trip.body.trip.id }));
+
+    const patched = await auth.agent
+      .patch(`/api/posts/${created.body.post.id}`)
+      .set('x-csrf-token', auth.csrf)
+      .send({ title: 'Neu' });
+    expect(patched.body.post.title).toBe('Neu');
+    expect(patched.body.post.tripId).toBe(trip.body.trip.id);
+  });
+
+  it('deletes a post', async () => {
+    const created = await createPost(postPayload());
+    const id = created.body.post.id;
+
+    const del = await auth.agent
+      .delete(`/api/posts/${id}`)
+      .set('x-csrf-token', auth.csrf);
+    expect(del.status).toBe(204);
+
+    const gone = await auth.agent.get(`/api/posts/${id}`);
+    expect(gone.status).toBe(404);
+  });
+
+  it('lists trips with a published/draft post count', async () => {
+    const trip = await createTrip('Alpen');
+    await createPost(postPayload({ tripId: trip.body.trip.id }));
+
+    const list = await auth.agent.get('/api/trips');
+    expect(list.status).toBe(200);
+    expect(list.body.trips[0]).toMatchObject({ name: 'Alpen', postCount: 1 });
+  });
+
+  it('rejects a duplicate trip name with 409', async () => {
+    await createTrip('Alpen');
+    const dup = await createTrip('Alpen');
+    expect(dup.status).toBe(409);
+  });
+
+  it('refuses to delete a trip that posts reference (409 + the posts)', async () => {
+    const trip = await createTrip('Alpen');
+    const post = await createPost(postPayload({ tripId: trip.body.trip.id }));
+
+    const blocked = await auth.agent
+      .delete(`/api/trips/${trip.body.trip.id}`)
+      .set('x-csrf-token', auth.csrf);
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error).toBe('trip_in_use');
+    expect(blocked.body.posts).toEqual([
+      { id: post.body.post.id, title: 'Berge' },
+    ]);
+
+    // After clearing the reference the trip can be deleted.
+    await auth.agent
+      .patch(`/api/posts/${post.body.post.id}`)
+      .set('x-csrf-token', auth.csrf)
+      .send({ tripId: '' });
+    const del = await auth.agent
+      .delete(`/api/trips/${trip.body.trip.id}`)
+      .set('x-csrf-token', auth.csrf);
+    expect(del.status).toBe(204);
+  });
+});

@@ -78,7 +78,54 @@ sequenceDiagram
   F-->>B: 200 / 401 (no session) / 403 (bad CSRF)
 ```
 
-> The image-pipeline sequence diagram is added in Phase 5.
+### Image upload pipeline (multipart → 202 → SSE → WebP variants)
+
+Upload is asynchronous. The route reads the multipart file, validates its mime
+type, reserves an image shortId, registers an upload channel, and returns `202`
+immediately with `{ uploadId, imageId }`. Transcoding then runs in the
+background: a single sharp re-encode strips all metadata (so EXIF/GPS never
+reach storage), producing a display variant (≤1600px) and a thumbnail (≤400px),
+both WebP. Both objects are written to MinIO, the `Image` document is persisted,
+and a `done` event carrying the image DTO is published. The browser tracks
+progress over a Server-Sent-Events channel; because every channel buffers its
+events, a client that connects after the pipeline finished still replays the
+terminal `done`/`error`.
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant F as Fastify
+  participant H as ProgressHub
+  participant S as sharp
+  participant M as MinIO
+  participant DB as Mongo
+  B->>F: POST /api/images/upload (multipart, X-CSRF-Token)
+  F->>F: validate mime · reserve imageId · uploadId
+  F->>H: create(uploadId)
+  F-->>B: 202 { uploadId, imageId }
+  Note over F,H: background pipeline (not awaited)
+  F->>H: publish progress 10
+  F->>S: re-encode (strip EXIF) → display 1600 + thumb 400 (webp q80)
+  F->>H: publish progress 60
+  F->>M: PutObject posts/<imageId>-display.webp
+  F->>M: PutObject posts/<imageId>-thumb.webp
+  F->>H: publish progress 90
+  F->>DB: Image.create({ shortId, keys, width, height, … })
+  F->>H: publish done { image }
+  B->>F: GET /api/images/upload/<uploadId>/progress (SSE)
+  F->>H: subscribe (replays buffered events)
+  H-->>B: data: progress … / done { image }
+  Note over B,F: on error the pipeline publishes { type: error }
+```
+
+### Delete-if-referenced guard
+
+Trips and images cannot be deleted while content points at them. `DELETE
+/api/trips/:id` checks for posts with that `tripId`; `DELETE /api/images/:id`
+scans post blocks (image + gallery references). If any referrer exists the route
+responds `409` with the list of referencing posts (`{ id, title }`) instead of
+deleting — the editor's "where used" view (`GET /api/images/:id/usage`) surfaces
+the same data.
 
 ## Data model
 
