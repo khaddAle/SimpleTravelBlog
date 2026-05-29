@@ -17,6 +17,30 @@ describe('buildRedisOptions', () => {
     expect('host' in opts).toBe(false);
   });
 
+  it('authenticates to the sentinels too (sentinelPassword) when a password is set', () => {
+    // The platform sentinels require auth (bitnami uses the same password for the
+    // data nodes and the sentinels); without sentinelPassword ioredis gets a
+    // "NOAUTH Authentication required" and reports "All sentinels are unreachable".
+    const opts = buildRedisOptions({
+      name: 'mymaster',
+      host: '127.0.0.1',
+      port: 6379,
+      sentinels: [{ host: 's1', port: 26379 }],
+      password: 'pw',
+    });
+    expect(opts.sentinelPassword).toBe('pw');
+  });
+
+  it('omits sentinelPassword when no password is configured', () => {
+    const opts = buildRedisOptions({
+      name: 'mymaster',
+      host: '127.0.0.1',
+      port: 6379,
+      sentinels: [{ host: 's1', port: 26379 }],
+    });
+    expect('sentinelPassword' in opts).toBe(false);
+  });
+
   it('falls back to host/port when no sentinels are configured', () => {
     const opts = buildRedisOptions({ name: 'mymaster', host: 'redis', port: 6380 });
     expect(opts.host).toBe('redis');

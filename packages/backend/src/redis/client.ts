@@ -15,7 +15,16 @@ export function buildRedisOptions(cfg: Config['redis']): RedisOptions {
     ...(cfg.keyPrefix ? { keyPrefix: cfg.keyPrefix } : {}),
   };
   if (cfg.sentinels && cfg.sentinels.length > 0) {
-    return { ...base, sentinels: cfg.sentinels, name: cfg.name };
+    return {
+      ...base,
+      sentinels: cfg.sentinels,
+      name: cfg.name,
+      // The Sentinel nodes require auth too (the platform uses one password for
+      // both the data nodes and the sentinels). `password` alone authenticates to
+      // the master; without `sentinelPassword` ioredis gets "NOAUTH Authentication
+      // required" from the sentinels and reports "All sentinels are unreachable".
+      ...(cfg.password ? { sentinelPassword: cfg.password } : {}),
+    };
   }
   return { ...base, host: cfg.host, port: cfg.port };
 }
