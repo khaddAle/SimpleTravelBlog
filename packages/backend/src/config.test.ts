@@ -48,6 +48,16 @@ describe('loadConfig', () => {
     expect(cfg.redis.port).toBe(6380);
   });
 
+  it('exposes the optional Redis key prefix when present', () => {
+    const cfg = loadConfig({ ...base, REDIS_KEY_PREFIX: 'travel-blog-dev:' });
+    expect(cfg.redis.keyPrefix).toBe('travel-blog-dev:');
+  });
+
+  it('omits the Redis key prefix when absent', () => {
+    const cfg = loadConfig(base);
+    expect(cfg.redis.keyPrefix).toBeUndefined();
+  });
+
   it('throws (fail-fast) when a required var is missing', () => {
     const { MONGO_URI: _omit, ...withoutMongo } = base;
     expect(() => loadConfig(withoutMongo)).toThrow(/MONGO_URI/);

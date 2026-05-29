@@ -29,6 +29,21 @@ describe('buildRedisOptions', () => {
     expect('password' in opts).toBe(false);
   });
 
+  it('passes through the key prefix when configured (shared-Redis isolation)', () => {
+    const opts = buildRedisOptions({
+      name: 'mymaster',
+      host: 'redis',
+      port: 6379,
+      keyPrefix: 'travel-blog-prod:',
+    });
+    expect(opts.keyPrefix).toBe('travel-blog-prod:');
+  });
+
+  it('omits the key prefix when not configured', () => {
+    const opts = buildRedisOptions({ name: 'mymaster', host: 'redis', port: 6379 });
+    expect('keyPrefix' in opts).toBe(false);
+  });
+
   it('createRedis builds a lazy (unconnected) client', async () => {
     const r = createRedis({ name: 'mymaster', host: '127.0.0.1', port: 6379 });
     expect(r).toBeInstanceOf(Redis);

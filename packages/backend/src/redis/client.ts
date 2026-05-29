@@ -12,6 +12,7 @@ export function buildRedisOptions(cfg: Config['redis']): RedisOptions {
     lazyConnect: true,
     maxRetriesPerRequest: 2,
     ...(cfg.password ? { password: cfg.password } : {}),
+    ...(cfg.keyPrefix ? { keyPrefix: cfg.keyPrefix } : {}),
   };
   if (cfg.sentinels && cfg.sentinels.length > 0) {
     return { ...base, sentinels: cfg.sentinels, name: cfg.name };

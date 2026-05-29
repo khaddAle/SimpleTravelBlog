@@ -42,6 +42,10 @@ const envSchema = z.object({
   REDIS_HOST: z.string().default('127.0.0.1'),
   REDIS_PORT: z.coerce.number().int().positive().default(6379),
   REDIS_PASSWORD: z.string().optional(),
+  // Namespaces every key (e.g. `travel-blog-dev:`). The platform Redis is a
+  // single shared keyspace, so dev/prod must prefix to avoid colliding on keys
+  // like `loginfails:<user>:<ip>` and `sess:<sid>`.
+  REDIS_KEY_PREFIX: z.string().optional(),
 
   // Object storage (MinIO/S3).
   S3_ENDPOINT: z.string().min(1),
@@ -78,6 +82,7 @@ export type Config = {
     host: string;
     port: number;
     password?: string;
+    keyPrefix?: string;
   };
   s3: {
     endpoint: string;
@@ -110,6 +115,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     port: e.REDIS_PORT,
     ...(e.REDIS_SENTINELS ? { sentinels: e.REDIS_SENTINELS } : {}),
     ...(e.REDIS_PASSWORD ? { password: e.REDIS_PASSWORD } : {}),
+    ...(e.REDIS_KEY_PREFIX ? { keyPrefix: e.REDIS_KEY_PREFIX } : {}),
   };
 
   return {
