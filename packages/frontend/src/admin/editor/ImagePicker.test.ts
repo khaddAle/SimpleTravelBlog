@@ -116,15 +116,31 @@ describe('ImagePicker browsing', () => {
     await user.click(await screen.findByRole('button', { name: 'Abbrechen' }));
     expect(onCancel).toHaveBeenCalled();
   });
+
+  it('the ✕ button also cancels', async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+    render(ImagePicker, { onSelect: vi.fn(), onCancel });
+    await user.click(await screen.findByLabelText('Schließen'));
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it('shows an error when the upload request fails', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'uploadImage').mockRejectedValue(new Error('zu groß'));
+    render(ImagePicker, { onSelect: vi.fn(), onCancel: vi.fn() });
+    await screen.findByLabelText('alpha.jpg');
+    const file = new File([new Uint8Array([1])], 'neu.jpg', { type: 'image/jpeg' });
+    await user.upload(screen.getByLabelText('Hochladen'), file);
+    expect(await screen.findByRole('alert')).toHaveTextContent('zu groß');
+  });
 });
 
 describe('ImagePicker upload', () => {
   class FakeEventSource implements EventSourceLike {
     onmessage: ((event: { data: string }) => void) | null = null;
     onerror: ((event: unknown) => void) | null = null;
-    constructor(public url: string) {
-      current = this;
-    }
+    constructor(public url: string) {}
     emit(data: unknown): void {
       this.onmessage?.({ data: JSON.stringify(data) });
     }
@@ -139,7 +155,10 @@ describe('ImagePicker upload', () => {
     render(ImagePicker, {
       onSelect,
       onCancel: vi.fn(),
-      eventSourceFactory: (url: string) => new FakeEventSource(url),
+      eventSourceFactory: (url: string) => {
+        current = new FakeEventSource(url);
+        return current;
+      },
     });
     await screen.findByLabelText('alpha.jpg');
 

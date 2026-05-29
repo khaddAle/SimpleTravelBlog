@@ -142,3 +142,105 @@ describe('uploadImage', () => {
     expect(init.headers['x-csrf-token']).toBe('tok-123');
   });
 });
+
+describe('error message extraction', () => {
+  it('falls back to a generic message when the body has neither field', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({}, { status: 500 }));
+    const err = await api.listPosts().catch((e: unknown) => e);
+    expect((err as ApiError).message).toBe('request failed (500)');
+  });
+
+  it('rethrows non-401 errors from me()', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ message: 'boom' }, { status: 500 }));
+    await expect(api.me()).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it('parses a non-JSON ok body as text without throwing', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, text: async () => 'plain' } as Response);
+    // The parse fallback returns the raw string; publicMap then reads .points → undefined.
+    await expect(api.publicMap()).resolves.toBeUndefined();
+  });
+});
+
+describe('remaining endpoints', () => {
+  it('getPost / updatePost / deletePost', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ post: { id: 'p1', title: 'T' } }));
+    expect((await api.getPost('p1')).title).toBe('T');
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ post: { id: 'p1', title: 'U' } }));
+    const updated = await api.updatePost('p1', { status: 'published' });
+    expect(updated.title).toBe('U');
+    expect(fetchMock.mock.calls[1]![1].method).toBe('PATCH');
+
+    fetchMock.mockResolvedValueOnce(noContent());
+    await expect(api.deletePost('p1')).resolves.toBeUndefined();
+  });
+
+  it('trips: list / create / delete', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ trips: [{ id: 't1', name: 'Alpen' }] }));
+    expect(await api.listTrips()).toHaveLength(1);
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ trip: { id: 't2', name: 'Nordsee' } }));
+    const trip = await api.createTrip('Nordsee');
+    expect(trip.name).toBe('Nordsee');
+
+    fetchMock.mockResolvedValueOnce(noContent());
+    await expect(api.deleteTrip('t2')).resolves.toBeUndefined();
+  });
+
+  it('images: usage / delete', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ posts: [{ id: 'p1', title: 'T' }] }));
+    expect(await api.imageUsage('img1')).toEqual([{ id: 'p1', title: 'T' }]);
+
+    fetchMock.mockResolvedValueOnce(noContent());
+    await expect(api.deleteImage('img1')).resolves.toBeUndefined();
+  });
+
+  it('users: list / create / update', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ users: [{ id: 'u1', username: 'mum' }] }));
+    expect(await api.listUsers()).toHaveLength(1);
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ user: { id: 'u2', username: 'kid' } }));
+    const created = await api.createUser({ username: 'kid', password: 'longenough', role: 'editor' });
+    expect(created.username).toBe('kid');
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ user: { id: 'u2', username: 'kid' } }));
+    await api.updateUser('u2', { deactivated: true });
+    expect(fetchMock.mock.calls[2]![1].method).toBe('PATCH');
+  });
+
+  it('settings: get / update', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ settings: { siteTitle: 'X', accentColor: '#000000' } }),
+    );
+    expect((await api.getSettings()).siteTitle).toBe('X');
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ settings: { siteTitle: 'Y', accentColor: '#111111' } }),
+    );
+    const saved = await api.updateSettings({ siteTitle: 'Y', accentColor: '#111111' });
+    expect(saved.siteTitle).toBe('Y');
+    expect(fetchMock.mock.calls[1]![1].method).toBe('PUT');
+  });
+
+  it('public: post / posts / trips / map / settings', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ post: { id: 'p1', title: 'T' } }));
+    expect((await api.publicPost('p1')).title).toBe('T');
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ posts: [{ id: 'p1' }], page: 1, pageSize: 20, total: 1 }),
+    );
+    expect((await api.publicPosts()).items).toHaveLength(1);
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ trips: [{ id: 't1', name: 'Alpen' }] }));
+    expect(await api.publicTrips()).toHaveLength(1);
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ points: [{ id: 'p1', title: 'T' }] }));
+    expect(await api.publicMap()).toHaveLength(1);
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ settings: { siteTitle: 'X', accentColor: '#000000' } }),
+    );
+    expect((await api.publicSettings()).siteTitle).toBe('X');
+  });
+});

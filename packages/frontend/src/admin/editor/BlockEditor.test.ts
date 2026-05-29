@@ -99,4 +99,44 @@ describe('BlockEditor', () => {
       { type: 'image', imageId: 'img1', caption: 'Gipfel' },
     ]);
   });
+
+  it('inserts a subtitle and a title', async () => {
+    const user = userEvent.setup();
+    const { onChange } = setup([]);
+    await user.click(screen.getByRole('button', { name: '+ Untertitel' }));
+    expect(onChange).toHaveBeenLastCalledWith([{ type: 'subtitle', text: '' }]);
+    await user.click(screen.getByRole('button', { name: '+ Titel' }));
+    expect(onChange).toHaveBeenLastCalledWith([
+      { type: 'subtitle', text: '' },
+      { type: 'title', text: '' },
+    ]);
+  });
+
+  it('edits a quote source and clears it', async () => {
+    const user = userEvent.setup();
+    const { onChange } = setup([{ type: 'quote', text: 'Reisen' }]);
+    await user.type(screen.getByLabelText('Quelle'), 'Oma');
+    expect(onChange).toHaveBeenLastCalledWith([{ type: 'quote', text: 'Reisen', source: 'Oma' }]);
+    await user.clear(screen.getByLabelText('Quelle'));
+    expect(onChange).toHaveBeenLastCalledWith([{ type: 'quote', text: 'Reisen' }]);
+  });
+
+  it('moves a block down', async () => {
+    const user = userEvent.setup();
+    const { onChange } = setup([
+      { type: 'title', text: 'A' },
+      { type: 'paragraph', text: 'B' },
+    ]);
+    const items = screen.getAllByRole('listitem');
+    await user.click(within(items[0]!).getByLabelText('Nach unten verschieben'));
+    expect(onChange).toHaveBeenLastCalledWith([
+      { type: 'paragraph', text: 'B' },
+      { type: 'title', text: 'A' },
+    ]);
+  });
+
+  it('summarises a gallery block', () => {
+    setup([{ type: 'gallery', imageIds: ['a', 'b', 'c'] }]);
+    expect(screen.getByText('3 Bilder')).toBeInTheDocument();
+  });
 });

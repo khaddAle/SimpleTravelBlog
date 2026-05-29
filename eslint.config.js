@@ -30,7 +30,9 @@ export default tseslint.config(
     },
   },
   {
-    files: ['**/*.svelte'],
+    // `.svelte` components and `.svelte.ts/.js` rune modules are parsed by
+    // svelte-eslint-parser, which needs the TS parser for their <script>/TS body.
+    files: ['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js'],
     languageOptions: {
       parserOptions: { parser: tseslint.parser },
     },

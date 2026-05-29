@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import type { PostMetadata } from '../../lib/types.js';
@@ -30,9 +30,9 @@ const trips = [
   { id: 't2', name: 'Nordsee' },
 ];
 
-let onChange: ReturnType<typeof vi.fn>;
+let onChange: Mock<(metadata: PostMetadata) => void>;
 beforeEach(() => {
-  onChange = vi.fn();
+  onChange = vi.fn<(metadata: PostMetadata) => void>();
 });
 
 describe('MetadataSidebar', () => {
@@ -65,5 +65,23 @@ describe('MetadataSidebar', () => {
     render(MetadataSidebar, { metadata: base, trips, onChange });
     // The map picker shows the seeded coordinates.
     expect(screen.getByText('Gewählt: 47.42000, 10.98000')).toBeInTheDocument();
+  });
+
+  it('sets and clears the subtitle', async () => {
+    const user = userEvent.setup();
+    render(MetadataSidebar, { metadata: base, trips, onChange });
+    await user.type(screen.getByLabelText('Untertitel'), 'Tag eins');
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ subtitle: 'Tag eins' }));
+    await user.clear(screen.getByLabelText('Untertitel'));
+    const last = onChange.mock.lastCall![0] as PostMetadata;
+    expect(last.subtitle).toBeUndefined();
+  });
+
+  it('updates the date and place', async () => {
+    const user = userEvent.setup();
+    render(MetadataSidebar, { metadata: base, trips, onChange });
+    await user.clear(screen.getByLabelText('Ortsname'));
+    await user.type(screen.getByLabelText('Ortsname'), 'Gipfel');
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ placeName: 'Gipfel' }));
   });
 });

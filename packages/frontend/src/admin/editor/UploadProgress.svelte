@@ -10,7 +10,7 @@
     onDone?: (image: ImageDto) => void;
     onError?: (message: string) => void;
     /** Injectable EventSource factory for tests. */
-    eventSourceFactory?: EventSourceFactory;
+    eventSourceFactory?: EventSourceFactory | undefined;
   }
 
   let { uploadId, onDone, onError, eventSourceFactory }: Props = $props();

@@ -23,7 +23,9 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/**/*.{ts,svelte}'],
       exclude: [
+        // Bootstrap / composition glue (mirrors the backend's server.ts exclusion).
         'src/main.ts',
+        'src/App.svelte',
         'src/test-setup.ts',
         'src/router.ts',
         '**/*.test.ts',
