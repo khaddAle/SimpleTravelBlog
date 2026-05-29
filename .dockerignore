@@ -1,0 +1,21 @@
+# Never copy host artifacts into the build context — node_modules is reinstalled
+# in-image (host is amd64; the image is arm64) and dist is rebuilt from source.
+**/node_modules
+**/dist
+**/.svelte-kit
+**/coverage
+**/test-results
+**/playwright-report
+**/.vite
+
+.git
+.github
+.claude
+docs
+tests/e2e
+
+**/*.log
+**/.env
+**/.env.*
+.editorconfig
+.nvmrc
