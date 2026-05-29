@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck-lint-test:
+    name: ci/typecheck-lint-test
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install (no lifecycle scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Rebuild native deps (sharp, argon2)
+        # --ignore-scripts skipped native binary setup; sharp/argon2 ship
+        # prebuilt binaries, but ensure they are wired up for the runner arch.
+        run: npm rebuild sharp argon2 || true
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test + coverage gate
+        run: npm test -- --coverage
+
+      - name: Build (smoke; no push)
+        run: npm run build

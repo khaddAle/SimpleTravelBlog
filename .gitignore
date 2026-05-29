@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Test / coverage
+coverage/
+.vitest/
+test-results/
+playwright-report/
+.playwright/
+blob-report/
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+*.log
+
+# Vite
+.svelte-kit/
+.vite/
