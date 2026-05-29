@@ -13,6 +13,7 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
     setupFiles: ['tests/setup.ts'],
+    globalSetup: ['tests/globalSetup.ts'],
     passWithNoTests: true,
     // Integration suites spin up MongoMemoryReplSet — give them headroom.
     testTimeout: 30_000,
