@@ -1,9 +1,12 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { svelteTesting } from '@testing-library/svelte/vite';
 
 export default defineConfig({
-  plugins: [svelte()],
+  // `svelteTesting` adds the `browser` resolve condition (so components mount via
+  // the client build, not Svelte's SSR entry) and registers auto-cleanup.
+  plugins: [svelte(), svelteTesting()],
   resolve: {
     alias: {
       '@stb/shared': fileURLToPath(new URL('../shared/src/index.ts', import.meta.url)),
