@@ -1,0 +1,102 @@
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, within } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
+import type { Block } from '@stb/shared';
+import BlockEditor from './BlockEditor.svelte';
+
+function setup(blocks: Block[], extra: Record<string, unknown> = {}) {
+  const onChange = vi.fn();
+  const result = render(BlockEditor, { blocks, onChange, ...extra });
+  return { onChange, ...result };
+}
+
+describe('BlockEditor', () => {
+  it('shows an empty hint when there are no blocks', () => {
+    setup([]);
+    expect(screen.getByText(/Noch keine Blöcke/)).toBeInTheDocument();
+  });
+
+  it('inserts a paragraph via the palette', async () => {
+    const user = userEvent.setup();
+    const { onChange } = setup([]);
+    await user.click(screen.getByRole('button', { name: '+ Absatz' }));
+    expect(onChange).toHaveBeenLastCalledWith([{ type: 'paragraph', text: '' }]);
+  });
+
+  it('inserts a divider', async () => {
+    const user = userEvent.setup();
+    const { onChange } = setup([]);
+    await user.click(screen.getByRole('button', { name: '+ Trenner' }));
+    expect(onChange).toHaveBeenLastCalledWith([{ type: 'divider' }]);
+  });
+
+  it('edits a title block text', async () => {
+    const user = userEvent.setup();
+    const { onChange } = setup([{ type: 'title', text: '' }]);
+    await user.type(screen.getByLabelText('Titel'), 'Berge');
+    expect(onChange).toHaveBeenLastCalledWith([{ type: 'title', text: 'Berge' }]);
+  });
+
+  it('reorders with ▲/▼ and disables at the ends', async () => {
+    const user = userEvent.setup();
+    const { onChange } = setup([
+      { type: 'title', text: 'A' },
+      { type: 'paragraph', text: 'B' },
+    ]);
+    const items = screen.getAllByRole('listitem');
+    // First item's "up" is disabled; last item's "down" is disabled.
+    expect(within(items[0]!).getByLabelText('Nach oben verschieben')).toBeDisabled();
+    expect(within(items[1]!).getByLabelText('Nach unten verschieben')).toBeDisabled();
+
+    await user.click(within(items[1]!).getByLabelText('Nach oben verschieben'));
+    expect(onChange).toHaveBeenLastCalledWith([
+      { type: 'paragraph', text: 'B' },
+      { type: 'title', text: 'A' },
+    ]);
+  });
+
+  it('deletes a block', async () => {
+    const user = userEvent.setup();
+    const { onChange } = setup([
+      { type: 'title', text: 'A' },
+      { type: 'divider' },
+    ]);
+    const items = screen.getAllByRole('listitem');
+    await user.click(within(items[0]!).getByLabelText('Entfernen'));
+    expect(onChange).toHaveBeenLastCalledWith([{ type: 'divider' }]);
+  });
+
+  it('inserts an image via the pickImage resolver', async () => {
+    const user = userEvent.setup();
+    const pickImage = vi.fn().mockResolvedValue('img42');
+    const { onChange } = setup([], { pickImage });
+    await user.click(screen.getByRole('button', { name: '+ Bild' }));
+    expect(pickImage).toHaveBeenCalled();
+    expect(onChange).toHaveBeenLastCalledWith([{ type: 'image', imageId: 'img42' }]);
+  });
+
+  it('does not insert an image when the picker is cancelled', async () => {
+    const user = userEvent.setup();
+    const pickImage = vi.fn().mockResolvedValue(null);
+    const { onChange } = setup([], { pickImage });
+    await user.click(screen.getByRole('button', { name: '+ Bild' }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('inserts a gallery via the pickGallery resolver', async () => {
+    const user = userEvent.setup();
+    const pickGallery = vi.fn().mockResolvedValue(['a', 'b']);
+    const { onChange } = setup([], { pickGallery });
+    await user.click(screen.getByRole('button', { name: '+ Galerie' }));
+    expect(onChange).toHaveBeenLastCalledWith([{ type: 'gallery', imageIds: ['a', 'b'] }]);
+  });
+
+  it('edits an image caption', async () => {
+    const user = userEvent.setup();
+    const { onChange } = setup([{ type: 'image', imageId: 'img1' }]);
+    await user.type(screen.getByLabelText('Bildunterschrift'), 'Gipfel');
+    expect(onChange).toHaveBeenLastCalledWith([
+      { type: 'image', imageId: 'img1', caption: 'Gipfel' },
+    ]);
+  });
+});
