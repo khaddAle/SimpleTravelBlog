@@ -18,12 +18,12 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import RedisMock from 'ioredis-mock';
-import fastifyStatic from '@fastify/static';
 import type { Redis } from 'ioredis';
 import { loadConfig } from '../src/config.js';
 import { connectMongo, disconnectMongo } from '../src/db/connection.js';
 import { buildApp } from '../src/app.js';
-import { createMemoryStorage, seedUser } from './helpers.js';
+import { ensureFirstAdmin } from '../src/bootstrap/firstAdmin.js';
+import { createMemoryStorage } from './helpers.js';
 
 const PORT = Number(process.env.E2E_PORT ?? 4000);
 const HOST = process.env.E2E_HOST ?? '127.0.0.1';
@@ -39,9 +39,6 @@ async function main(): Promise<void> {
   const replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   await connectMongo(replSet.getUri(), { autoIndex: true });
 
-  // Seed the first admin directly (no first-run bootstrap module yet).
-  await seedUser({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD, role: 'admin' });
-
   const redis = new RedisMock() as unknown as Redis;
   const storage = createMemoryStorage('travel-blog-images-e2e');
   const config = loadConfig({
@@ -55,19 +52,14 @@ async function main(): Promise<void> {
     S3_SECRET_KEY: 'e2e-secret',
     SESSION_COOKIE_SECRET: 'e2e-session-secret-0123456789abcdef',
     CSRF_COOKIE_SECRET: 'e2e-csrf-secret-0123456789abcdef',
+    ADMIN_BOOTSTRAP_USERNAME: ADMIN_USERNAME,
+    ADMIN_BOOTSTRAP_PASSWORD: ADMIN_PASSWORD,
   });
 
-  const app = await buildApp({ redis, config, storage });
-
-  // Serve the built SPA. `@fastify/static` handles real asset paths; everything
-  // else that is not an API call falls through to index.html (hash routing).
-  await app.register(fastifyStatic, { root: frontendDist });
-  app.setNotFoundHandler((req, reply) => {
-    if (req.method === 'GET' && !req.url.startsWith('/api')) {
-      return reply.sendFile('index.html');
-    }
-    return reply.code(404).send({ error: 'not_found' });
-  });
+  // Seed the first admin through the real first-run bootstrap module, and serve
+  // the built SPA via the real static-serving path (both wired into buildApp).
+  await ensureFirstAdmin(config);
+  const app = await buildApp({ redis, config, storage, staticRoot: frontendDist });
 
   await app.listen({ host: HOST, port: PORT });
   console.log(`[e2e-harness] listening on http://${HOST}:${PORT}`);
