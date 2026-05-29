@@ -49,6 +49,70 @@ flowchart TB
 
 ## Data model
 
-> Mongoose model ERD is added in Phase 3. Models: User, Post, Trip, Image,
-> Settings (singleton). Posts carry an ordered `Block[]` (discriminated union
-> defined in `@stb/shared`) and a denormalized German-language `searchText`.
+Mongoose models (`packages/backend/src/db/models/`). Posts carry an ordered
+`Block[]` (the discriminated union from `@stb/shared`, validated on save) and a
+denormalized German-language `searchText` rebuilt from title/subtitle/placeName +
+block text on every save (german `$text` index).
+
+```mermaid
+erDiagram
+  USER ||--o{ POST  : authors
+  USER ||--o{ IMAGE : uploads
+  TRIP ||--o{ POST  : groups
+  POST }o--o{ IMAGE : references
+
+  USER {
+    string username "unique, lowercased"
+    string passwordHash "argon2id"
+    enum   role "admin | editor"
+    date   deactivatedAt "nullable"
+  }
+  POST {
+    string shortId "unique 6-char"
+    string title
+    string subtitle "optional"
+    mixed  blocks "Block[] (shared union)"
+    date   postDate
+    string country "ISO alpha-2"
+    string placeName
+    number lat
+    number lng
+    objectId tripId "optional, indexed"
+    enum   status "draft | published"
+    objectId authorId
+    date   publishedAt "set on first publish"
+    string searchText "denormalized, german text index"
+  }
+  TRIP {
+    string shortId "unique"
+    string name "unique"
+  }
+  IMAGE {
+    string shortId "unique"
+    string originalFilename
+    string mime
+    string displayKey "webp <=1600px"
+    string thumbKey "webp <=400px"
+    number width
+    number height
+    objectId uploaderId
+  }
+  SETTINGS {
+    string _id "singleton 'site'"
+    string siteTitle
+    string accentColor "#rrggbb"
+    string logoKey "optional"
+  }
+```
+
+Indexes: `User.username` unique · `Post.shortId` unique, `postDate -1`,
+`country`, `tripId`, `searchText` text (german) · `Trip.shortId`+`name` unique ·
+`Image.shortId` unique.
+
+### Infrastructure adapters
+- **Redis** (`src/redis/`): Sentinel-aware client factory; session store
+  (`sess:<sid>` → `{userId, csrfSecret}`, sliding TTL) and login rate limiter
+  (`loginfails:<user>:<ip>`, windowed counter).
+- **Object storage** (`src/storage/s3.ts`): MinIO/S3 wrapper (put/get/delete),
+  client injectable for tests.
+- **Config** (`src/config.ts`): zod env schema, fail-fast at boot.
