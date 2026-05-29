@@ -18,6 +18,8 @@
     "typecheck": "npm run typecheck -w @stb/shared && npm run typecheck -w @stb/backend && npm run typecheck -w @stb/frontend",
     "test": "vitest run",
     "test:watch": "vitest",
+    "e2e:server": "tsx packages/backend/tests/e2e-harness.ts",
+    "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
     "import-wp": "npm run import-wp -w @stb/backend"
   },
   "devDependencies": {
