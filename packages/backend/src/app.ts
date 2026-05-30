@@ -9,6 +9,7 @@ import { createStorage, type ObjectStorage } from './storage/s3.js';
 import { createProgressHub, type ProgressHub } from './images/progress.js';
 import type { RouteContext } from './routes/context.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerRobots } from './robots.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerPostRoutes } from './routes/posts.js';
 import { registerTripRoutes } from './routes/trips.js';
@@ -62,6 +63,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     progress: deps.progress ?? createProgressHub(),
   };
 
+  registerRobots(app);
   registerHealthRoutes(app);
   registerAuthRoutes(app, { redis: deps.redis, config: deps.config, hooks });
   registerPostRoutes(app, ctx);
