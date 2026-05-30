@@ -24,6 +24,7 @@ export interface PostLike {
   placeName: string;
   lat: number;
   lng: number;
+  coverImageId?: string | null;
   status: 'draft' | 'published';
   publishedAt?: Date | null;
   createdAt: Date;
@@ -42,6 +43,7 @@ export function toPostDto(p: PostLike, tripShortId?: string): PostDto {
     lat: p.lat,
     lng: p.lng,
     ...(tripShortId ? { tripId: tripShortId } : {}),
+    ...(p.coverImageId ? { coverImageId: p.coverImageId } : {}),
     status: p.status,
     ...(p.publishedAt ? { publishedAt: p.publishedAt.toISOString() } : {}),
     createdAt: p.createdAt.toISOString(),
@@ -110,6 +112,7 @@ export interface SettingsLike {
   siteTitle: string;
   accentColor: string;
   logoKey?: string | null;
+  backgroundImageIds?: string[] | null;
 }
 
 export function toSettingsDto(s: SettingsLike): SettingsDto {
@@ -117,6 +120,9 @@ export function toSettingsDto(s: SettingsLike): SettingsDto {
     siteTitle: s.siteTitle,
     accentColor: s.accentColor,
     ...(s.logoKey ? { logoKey: s.logoKey } : {}),
+    ...(s.backgroundImageIds?.length
+      ? { backgroundImageIds: s.backgroundImageIds }
+      : {}),
   };
 }
 

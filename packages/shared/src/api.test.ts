@@ -4,6 +4,7 @@ import {
   userDtoSchema,
   createPostRequestSchema,
   updatePostRequestSchema,
+  postDtoSchema,
   createTripRequestSchema,
   searchQuerySchema,
   settingsDtoSchema,
@@ -104,6 +105,21 @@ describe('createPostRequestSchema', () => {
       createPostRequestSchema.parse({ ...base, publishedAt: '2019-07-14' }),
     ).toThrow();
   });
+
+  it('accepts an optional coverImageId', () => {
+    const parsed = createPostRequestSchema.parse({ ...base, coverImageId: 'img7' });
+    expect(parsed.coverImageId).toBe('img7');
+  });
+
+  it('leaves coverImageId undefined when omitted', () => {
+    expect(createPostRequestSchema.parse(base).coverImageId).toBeUndefined();
+  });
+
+  it('rejects a non-string coverImageId', () => {
+    expect(() =>
+      createPostRequestSchema.parse({ ...base, coverImageId: 42 }),
+    ).toThrow();
+  });
 });
 
 describe('updatePostRequestSchema', () => {
@@ -113,6 +129,32 @@ describe('updatePostRequestSchema', () => {
   });
   it('rejects an unknown status', () => {
     expect(() => updatePostRequestSchema.parse({ status: 'archived' })).toThrow();
+  });
+});
+
+describe('postDtoSchema', () => {
+  const base = {
+    id: 'p1',
+    title: 'Berge',
+    blocks: [{ type: 'paragraph', text: 'hallo' }],
+    postDate: '2026-05-01T00:00:00.000Z',
+    country: 'DE',
+    placeName: 'Zugspitze',
+    lat: 47.42,
+    lng: 10.98,
+    status: 'draft',
+    createdAt: '2026-05-01T00:00:00.000Z',
+    updatedAt: '2026-05-01T00:00:00.000Z',
+  };
+
+  it('accepts an optional coverImageId', () => {
+    expect(postDtoSchema.parse({ ...base, coverImageId: 'img7' }).coverImageId).toBe(
+      'img7',
+    );
+  });
+
+  it('leaves coverImageId undefined when omitted', () => {
+    expect(postDtoSchema.parse(base).coverImageId).toBeUndefined();
   });
 });
 
@@ -142,6 +184,32 @@ describe('settingsDtoSchema', () => {
     ).toBe('#2b6cb0');
     expect(() =>
       settingsDtoSchema.parse({ siteTitle: 'Reise', accentColor: 'blue' }),
+    ).toThrow();
+  });
+
+  it('accepts an optional list of backgroundImageIds', () => {
+    const parsed = settingsDtoSchema.parse({
+      siteTitle: 'Reise',
+      accentColor: '#2b6cb0',
+      backgroundImageIds: ['bg1', 'bg2'],
+    });
+    expect(parsed.backgroundImageIds).toEqual(['bg1', 'bg2']);
+  });
+
+  it('leaves backgroundImageIds undefined when omitted', () => {
+    expect(
+      settingsDtoSchema.parse({ siteTitle: 'Reise', accentColor: '#2b6cb0' })
+        .backgroundImageIds,
+    ).toBeUndefined();
+  });
+
+  it('rejects a non-string entry in backgroundImageIds', () => {
+    expect(() =>
+      settingsDtoSchema.parse({
+        siteTitle: 'Reise',
+        accentColor: '#2b6cb0',
+        backgroundImageIds: ['bg1', 7],
+      }),
     ).toThrow();
   });
 });

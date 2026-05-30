@@ -16,6 +16,9 @@ const settingsSchema = new Schema(
       match: /^#[0-9a-fA-F]{6}$/,
     },
     logoKey: { type: String },
+    // Optional blog background images (image shortIds). Rendering is deferred;
+    // these count toward the image refcount / delete-guard.
+    backgroundImageIds: { type: [String], default: [] },
   },
   { timestamps: true, _id: false },
 );

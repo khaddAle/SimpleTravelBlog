@@ -1,5 +1,6 @@
 import type { Block } from '@stb/shared';
 import { Post } from '../db/models/Post.js';
+import { Settings, SETTINGS_ID } from '../db/models/Settings.js';
 
 /** All image shortIds referenced by a block list (image blocks + galleries). */
 export function collectImageIds(blocks: Block[]): string[] {
@@ -13,12 +14,21 @@ export function collectImageIds(blocks: Block[]): string[] {
 
 /** Set of every image shortId referenced by any post — used to find orphans. */
 export async function imageIdsInUse(): Promise<Set<string>> {
-  const posts = await Post.find({}, { blocks: 1 }).lean();
+  const posts = await Post.find({}, { blocks: 1, coverImageId: 1 }).lean();
   const used = new Set<string>();
   for (const post of posts) {
     for (const id of collectImageIds((post.blocks ?? []) as Block[])) used.add(id);
+    if (post.coverImageId) used.add(post.coverImageId);
   }
+  // Blog background images (settings singleton) also pin their images.
+  const settings = await Settings.findById(SETTINGS_ID, { backgroundImageIds: 1 }).lean();
+  for (const id of settings?.backgroundImageIds ?? []) used.add(id);
   return used;
+}
+
+/** Whether an image is pinned as a blog background in the settings singleton. */
+export async function imageReferencedBySettings(imageId: string): Promise<boolean> {
+  return (await Settings.exists({ _id: SETTINGS_ID, backgroundImageIds: imageId })) != null;
 }
 
 export interface PostRef {
@@ -33,6 +43,7 @@ export async function postsReferencingImage(imageId: string): Promise<PostRef[]>
       $or: [
         { blocks: { $elemMatch: { type: 'image', imageId } } },
         { blocks: { $elemMatch: { type: 'gallery', imageIds: imageId } } },
+        { coverImageId: imageId },
       ],
     },
     { shortId: 1, title: 1 },

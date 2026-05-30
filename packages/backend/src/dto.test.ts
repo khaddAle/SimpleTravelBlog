@@ -59,6 +59,13 @@ describe('toPostDto', () => {
     expect(dto.tripId).toBe('trip01');
     expect(dto.publishedAt).toBe('2026-05-04T00:00:00.000Z');
   });
+
+  it('includes coverImageId when present and omits it otherwise', () => {
+    expect(toPostDto({ ...basePost, coverImageId: 'cov123' }).coverImageId).toBe(
+      'cov123',
+    );
+    expect(toPostDto(basePost).coverImageId).toBeUndefined();
+  });
 });
 
 describe('toImageDto', () => {
@@ -121,6 +128,23 @@ describe('toSettingsDto', () => {
     expect(
       toSettingsDto({ siteTitle: 'S', accentColor: '#abcdef', logoKey: 'logo/x.webp' }).logoKey,
     ).toBe('logo/x.webp');
+  });
+
+  it('includes backgroundImageIds only when non-empty', () => {
+    expect(
+      toSettingsDto({ siteTitle: 'S', accentColor: '#abcdef' }).backgroundImageIds,
+    ).toBeUndefined();
+    expect(
+      toSettingsDto({ siteTitle: 'S', accentColor: '#abcdef', backgroundImageIds: [] })
+        .backgroundImageIds,
+    ).toBeUndefined();
+    expect(
+      toSettingsDto({
+        siteTitle: 'S',
+        accentColor: '#abcdef',
+        backgroundImageIds: ['bg1', 'bg2'],
+      }).backgroundImageIds,
+    ).toEqual(['bg1', 'bg2']);
   });
 
   it('ships a sensible default branding', () => {

@@ -5,7 +5,8 @@
   import { formatDate } from '../lib/dates.js';
 
   let { post }: { post: PostDto } = $props();
-  const cover = $derived(coverImageId(post.blocks));
+  // Prefer an explicit per-post cover; fall back to the first block thumbnail.
+  const cover = $derived(post.coverImageId ?? coverImageId(post.blocks));
 </script>
 
 <a class="post-card" href={`#/beitrag/${post.id}`}>

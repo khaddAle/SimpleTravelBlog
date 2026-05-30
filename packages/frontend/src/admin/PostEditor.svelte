@@ -44,6 +44,7 @@
           lng: post.lng,
           ...(post.subtitle ? { subtitle: post.subtitle } : {}),
           ...(post.tripId ? { tripId: post.tripId } : {}),
+          ...(post.coverImageId ? { coverImageId: post.coverImageId } : {}),
         };
         blocks = post.blocks;
       }
@@ -85,6 +86,7 @@
       lat: metadata.lat,
       lng: metadata.lng,
       ...(metadata.tripId ? { tripId: metadata.tripId } : {}),
+      ...(metadata.coverImageId ? { coverImageId: metadata.coverImageId } : {}),
       blocks,
     };
   }
@@ -123,7 +125,7 @@
         <h2>Inhalt</h2>
         <BlockEditor {blocks} onChange={(next) => (blocks = next)} {pickImage} {pickGallery} />
       </section>
-      <MetadataSidebar {metadata} {trips} onChange={(next) => (metadata = next)} />
+      <MetadataSidebar {metadata} {trips} onChange={(next) => (metadata = next)} {pickImage} />
     </div>
     <div class="save-bar">
       <button type="button" disabled={saving} onclick={() => save('draft')}>

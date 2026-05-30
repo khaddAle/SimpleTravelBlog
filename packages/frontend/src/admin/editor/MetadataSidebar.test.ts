@@ -84,4 +84,31 @@ describe('MetadataSidebar', () => {
     await user.type(screen.getByLabelText('Ortsname'), 'Gipfel');
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ placeName: 'Gipfel' }));
   });
+
+  it('chooses a cover image via the picker', async () => {
+    const user = userEvent.setup();
+    const pickImage = vi.fn().mockResolvedValue('img9');
+    render(MetadataSidebar, { metadata: base, trips, onChange, pickImage });
+    await user.click(screen.getByRole('button', { name: 'Bild wählen' }));
+    expect(pickImage).toHaveBeenCalled();
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ coverImageId: 'img9' }),
+    );
+  });
+
+  it('shows the current cover thumbnail and clears it', async () => {
+    const user = userEvent.setup();
+    const { container } = render(MetadataSidebar, {
+      metadata: { ...base, coverImageId: 'img9' },
+      trips,
+      onChange,
+    });
+    expect(container.querySelector('.cover-thumb')).toHaveAttribute(
+      'src',
+      '/api/public/images/img9/thumb',
+    );
+    await user.click(screen.getByRole('button', { name: 'Entfernen' }));
+    const last = onChange.mock.lastCall![0] as PostMetadata;
+    expect(last.coverImageId).toBeUndefined();
+  });
 });

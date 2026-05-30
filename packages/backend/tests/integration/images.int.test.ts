@@ -77,6 +77,22 @@ describe('images integration', () => {
         blocks: [{ type: 'image', imageId }],
       });
 
+  /** Post that references an image ONLY via its cover, never inside a block. */
+  const postWithCover = (coverImageId: string) =>
+    auth.agent
+      .post('/api/posts')
+      .set('x-csrf-token', auth.csrf)
+      .send({
+        title: 'Mit Titelbild',
+        postDate: '2026-05-01T00:00:00.000Z',
+        country: 'DE',
+        placeName: 'Ort',
+        lat: 47,
+        lng: 10,
+        coverImageId,
+        blocks: [{ type: 'paragraph', text: 'kein Bildblock' }],
+      });
+
   it('rejects unauthenticated and CSRF-less uploads', async () => {
     const buf = await makeJpegWithGps();
     const noAuth = await request(app.server)
@@ -168,6 +184,43 @@ describe('images integration', () => {
     expect(del.status).toBe(204);
     expect(storage.deletes).toContain(`posts/${orphan}-display.webp`);
     expect(storage.deletes).toContain(`posts/${orphan}-thumb.webp`);
+  });
+
+  it('treats a cover-only image as in-use: excluded from orphans and undeletable', async () => {
+    const cover = await uploadImage('cover.jpg');
+    await postWithCover(cover);
+
+    const orphans = await auth.agent.get('/api/images?orphansOnly=true');
+    expect(orphans.body.images.map((i: { id: string }) => i.id)).not.toContain(cover);
+
+    const usage = await auth.agent.get(`/api/images/${cover}/usage`);
+    expect(usage.body.posts.map((p: { title: string }) => p.title)).toEqual([
+      'Mit Titelbild',
+    ]);
+
+    const blocked = await auth.agent
+      .delete(`/api/images/${cover}`)
+      .set('x-csrf-token', auth.csrf);
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error).toBe('image_in_use');
+  });
+
+  it('treats a settings background image as in-use: non-orphan and undeletable', async () => {
+    const bg = await uploadImage('bg.jpg');
+    const put = await auth.agent
+      .put('/api/settings')
+      .set('x-csrf-token', auth.csrf)
+      .send({ siteTitle: 'Reise', accentColor: '#2b6cb0', backgroundImageIds: [bg] });
+    expect(put.status).toBe(200);
+
+    const orphans = await auth.agent.get('/api/images?orphansOnly=true');
+    expect(orphans.body.images.map((i: { id: string }) => i.id)).not.toContain(bg);
+
+    const blocked = await auth.agent
+      .delete(`/api/images/${bg}`)
+      .set('x-csrf-token', auth.csrf);
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error).toBe('image_in_use');
   });
 
   it('serves both public image variants and 404s unknown ones', async () => {

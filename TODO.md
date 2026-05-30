@@ -54,64 +54,45 @@ the plan and the per-phase memory note.
 Post-cutover polish ideas from dev testing (2026-05-30). All TDD, 80% gate,
 German UI strings inline. Grouped by effort. None block the cutover.
 
+**ALL DONE 2026-05-30** (A–G). The two last ones (per-post cover, blog backgrounds)
+landed this session; the rest were committed earlier (`3973b83`…`cbad267`).
+
 ### Small — pure frontend, isolated
 
-- [ ] **Show selected-image count in the image picker.** `ImagePicker.svelte`
-      already tracks `selected: string[]`; render e.g. `{selected.length} ausgewählt`
-      in the header/footer (esp. for `mode === 'multiple'`). No schema change.
-- [ ] **Gallery thumbnails in the editor.** `BlockEditor.svelte` gallery branch
-      shows only `"{n} Bilder"`. Render the `imageIds` as a small thumb grid using
-      the same `imageUrl(id, 'thumb')` pattern the single-image branch already uses.
-      Pure frontend, no schema change.
+- [X] **Show selected-image count in the image picker.** `ImagePicker.svelte`
+      renders `{selected.length} ausgewählt` in the footer. (`3973b83`/`6abee57`)
+- [X] **Gallery thumbnails in the editor.** `BlockEditor.svelte` gallery branch
+      renders the `imageIds` as a thumb grid via `imageUrl(id, 'thumb')`. (`a97df87`)
 
 ### Small–Medium — one self-contained component
 
-- [ ] **Gallery lightbox / overlay viewer.** `GalleryBlock.svelte` currently opens
-      each image with `<a target="_blank">`. Replace with an overlay: current index
-      state, ◀/▶ to step through the gallery, Esc/✕ to close. Respect: keyboard a11y +
-      focus trap, lock body scroll while open, preload neighbors. Build it generic so
-      the single `ImageBlock` can reuse it later. Pure frontend, no backend.
+- [X] **Gallery lightbox / overlay viewer.** Overlay with index state, ◀/▶, Esc/✕,
+      focus trap + body-scroll lock + neighbor preload. (`29cb8a6`)
 
 ### Medium — shared schema + renderer + editor + search
 
-- [ ] **Gallery caption/subtitle.** Add an optional `caption` to `galleryBlockSchema`
-      (`packages/shared/src/blocks.ts`), mirroring the image block. Backward-compatible
-      (optional field). Sub-steps (acceptance criteria):
-  - [ ] Add `caption` to the schema + round-trip tests.
-  - [ ] Render a `<figcaption>` below the grid in `GalleryBlock.svelte`.
-  - [ ] Add the caption input in the editor's gallery branch (`BlockEditor.svelte`).
-  - [ ] Feed the caption into `blocksToSearchText` (`blocks/plaintext.ts`) so it's
-        searchable, like the image caption — with a test asserting it lands in
-        `searchText`.
+- [X] **Gallery caption/subtitle.** Optional `caption` on `galleryBlockSchema`,
+      `<figcaption>` in `GalleryBlock.svelte`, editor input, and indexed into
+      `blocksToSearchText`. (`4127be9` + `9acc71f`)
 
 ### Medium — full-stack, several layers each
 
-- [ ] **Upload multiple images at once.** Today `ImagePicker.onFileChange` reads only
-      `files?.[0]` and the `<input>` lacks `multiple`; backend `/api/images/upload`
-      is one-file-per-request (`req.file()`). Plan: keep the backend as-is, add
-      `multiple` to the input, fan out one POST per file (each its own `uploadId`/SSE),
-      and render a **list** of `UploadProgress` rows. Cap client concurrency (~3) so we
-      don't open many SSE streams at once. Tighten `accept` to the real MIME set. No
-      backend change strictly required.
-- [ ] **Optional per-post cover image (thumbnail for list/archive/landing views).**
-      Sub-steps (acceptance criteria):
-  - [ ] Add optional `coverImageId` to the `Post` model + shared create/update DTOs +
-        post-list DTO.
-  - [ ] Add a cover picker in the editor metadata sidebar.
-  - [ ] List/archive/landing views prefer it, with an explicit fallback rule: first
-        `image` block → else first id of the first `gallery` block → else none.
-  - [ ] Extend reference-counting (`postsReferencingImage` / `imageIdsInUse`, which
-        today scan **blocks only**) to also count `coverImageId`, so a cover image not
-        used in a block isn't treated as an orphan and deleted out from under the post.
-        Cover a set-but-not-in-block cover with a test.
-- [ ] **Blog-level images (1–n) selectable by the admin** (future use: title/hero
-      background once the general design is improved). **Partly speculative** — no
-      consumer yet; store + admin UI now, defer the actual background rendering.
-      Sub-steps (acceptance criteria):
-  - [ ] Add `backgroundImageIds: string[]` to the `Settings` singleton + settings DTO.
-  - [ ] Add a multi-select in the Settings admin page.
-  - [ ] Extend reference-counting to also count `Settings.backgroundImageIds`, so these
-        images become "in use" and aren't orphan-deletable. Cover with a test.
+- [X] **Upload multiple images at once.** `multiple` input, one POST per file with
+      its own SSE, a list of `UploadProgress` rows, client concurrency cap. (`cbad267`)
+- [X] **Optional per-post cover image (thumbnail for list/archive/landing views).**
+  - [X] `coverImageId` on the `Post` model + shared create/update DTOs + post DTO.
+  - [X] Cover picker in the editor metadata sidebar (built from scratch — the prior
+        plan's claim that it already existed was wrong).
+  - [X] `PostCard` prefers it; fallback: first `image` block → else first id of the
+        first `gallery` block → else none.
+  - [X] `imageIdsInUse` / `postsReferencingImage` also count `coverImageId`; a
+        cover-only image is a non-orphan and returns 409 on delete (tested).
+- [X] **Blog-level images (1–n) selectable by the admin** (store + admin UI now;
+      background rendering deferred).
+  - [X] `backgroundImageIds: string[]` on the `Settings` singleton + settings DTO.
+  - [X] Multi-select (ImagePicker modal) in the Settings admin page.
+  - [X] Refcount counts `Settings.backgroundImageIds`; a background-only image is a
+        non-orphan and returns 409 on delete (tested).
 
 ## Done
 

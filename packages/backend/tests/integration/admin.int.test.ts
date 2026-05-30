@@ -144,6 +144,30 @@ describe('admin (users + settings) integration', () => {
       expect(reread.body.settings.siteTitle).toBe('Unsere Reise');
     });
 
+    it('round-trips backgroundImageIds through PUT and GET', async () => {
+      const editor = await authedAgent(app, { username: 'ed', role: 'editor' });
+
+      const updated = await editor.agent
+        .put('/api/settings')
+        .set('x-csrf-token', editor.csrf)
+        .send({
+          siteTitle: 'Reise',
+          accentColor: '#2b6cb0',
+          backgroundImageIds: ['bg1', 'bg2'],
+        });
+      expect(updated.status).toBe(200);
+      expect(updated.body.settings.backgroundImageIds).toEqual(['bg1', 'bg2']);
+
+      const reread = await editor.agent.get('/api/settings');
+      expect(reread.body.settings.backgroundImageIds).toEqual(['bg1', 'bg2']);
+
+      const cleared = await editor.agent
+        .put('/api/settings')
+        .set('x-csrf-token', editor.csrf)
+        .send({ siteTitle: 'Reise', accentColor: '#2b6cb0', backgroundImageIds: [] });
+      expect(cleared.body.settings.backgroundImageIds).toBeUndefined();
+    });
+
     it('requires the CSRF header to update settings (403)', async () => {
       const editor = await authedAgent(app, { username: 'ed', role: 'editor' });
       const res = await editor.agent

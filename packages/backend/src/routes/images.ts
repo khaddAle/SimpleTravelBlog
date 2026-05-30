@@ -5,7 +5,11 @@ import { Image } from '../db/models/Image.js';
 import { generateUniqueShortId } from '../lib/shortId.js';
 import { processImage } from '../images/pipeline.js';
 import { toImageDto } from '../dto.js';
-import { imageIdsInUse, postsReferencingImage } from '../posts/references.js';
+import {
+  imageIdsInUse,
+  postsReferencingImage,
+  imageReferencedBySettings,
+} from '../posts/references.js';
 import { escapeRegex, type RouteContext } from './context.js';
 
 const ALLOWED_MIME = new Set([
@@ -173,7 +177,8 @@ export function registerImageRoutes(app: FastifyInstance, ctx: RouteContext): vo
       if (!image) throw app.httpErrors.notFound('image not found');
 
       const refs = await postsReferencingImage(req.params.shortId);
-      if (refs.length > 0) {
+      const inSettings = await imageReferencedBySettings(req.params.shortId);
+      if (refs.length > 0 || inSettings) {
         reply.code(409);
         return { error: 'image_in_use', posts: refs };
       }

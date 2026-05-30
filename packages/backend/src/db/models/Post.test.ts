@@ -44,6 +44,18 @@ describe('Post model', () => {
     expect(p.publishedAt).toBeInstanceOf(Date);
   });
 
+  it('persists an optional coverImageId', async () => {
+    const p = await Post.create(basePost({ coverImageId: 'cov123' }));
+    expect(p.coverImageId).toBe('cov123');
+    const reloaded = await Post.findById(p._id).lean();
+    expect(reloaded?.coverImageId).toBe('cov123');
+  });
+
+  it('leaves coverImageId unset when omitted', async () => {
+    const p = await Post.create(basePost());
+    expect(p.coverImageId).toBeFalsy();
+  });
+
   it('rejects invalid blocks via the shared schema', async () => {
     await expect(
       Post.create(basePost({ blocks: [{ type: 'video', url: 'x' }] })),

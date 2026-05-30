@@ -11,4 +11,5 @@ export interface PostMetadata {
   lat: number;
   lng: number;
   tripId?: string;
+  coverImageId?: string;
 }

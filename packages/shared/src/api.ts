@@ -61,6 +61,9 @@ export const createPostRequestSchema = postMetadataSchema.extend({
   // publishedAt stamped on first publish.
   status: postStatusSchema.optional(),
   publishedAt: z.string().datetime().optional(),
+  // Optional per-post cover image (imported posts carry one). References an
+  // image shortId; counts toward the image refcount / delete-guard.
+  coverImageId: z.string().optional(),
 });
 export type CreatePostRequest = z.infer<typeof createPostRequestSchema>;
 
@@ -81,6 +84,7 @@ export const postDtoSchema = z.object({
   lat: latSchema,
   lng: lngSchema,
   tripId: z.string().optional(),
+  coverImageId: z.string().optional(),
   status: postStatusSchema,
   publishedAt: z.string().optional(),
   createdAt: z.string(),
@@ -175,6 +179,9 @@ export const settingsDtoSchema = z.object({
   siteTitle: z.string().min(1).max(120),
   accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   logoKey: z.string().optional(),
+  // Optional blog background images (image shortIds). Stored + editable now;
+  // rendering on the public blog is deferred. Counts toward the image refcount.
+  backgroundImageIds: z.array(z.string()).optional(),
 });
 export type SettingsDto = z.infer<typeof settingsDtoSchema>;
 

@@ -3,15 +3,17 @@
   import type { TripDto } from '@stb/shared';
   import type { PostMetadata } from '../../lib/types.js';
   import { toDateInputValue, fromDateInputValue } from '../../lib/dates.js';
+  import { imageUrl } from '../../lib/images.js';
   import MapPicker from './MapPicker.svelte';
 
   interface Props {
     metadata: PostMetadata;
     trips: TripDto[];
     onChange: (metadata: PostMetadata) => void;
+    pickImage?: () => Promise<string | null>;
   }
 
-  let { metadata, trips, onChange }: Props = $props();
+  let { metadata, trips, onChange, pickImage }: Props = $props();
 
   let value = $state<PostMetadata>(untrack(() => ({ ...metadata })));
 
@@ -28,6 +30,19 @@
   function setSubtitle(text: string): void {
     if (text) value.subtitle = text;
     else delete value.subtitle;
+    emit();
+  }
+
+  async function chooseCover(): Promise<void> {
+    const id = await pickImage?.();
+    if (id) {
+      value.coverImageId = id;
+      emit();
+    }
+  }
+
+  function clearCover(): void {
+    delete value.coverImageId;
     emit();
   }
 </script>
@@ -101,6 +116,21 @@
     </select>
   </label>
 
+  <div class="cover-field">
+    <span class="cover-label">Titelbild</span>
+    {#if value.coverImageId}
+      <img class="cover-thumb" src={imageUrl(value.coverImageId, 'thumb')} alt="" />
+    {/if}
+    <div class="cover-actions">
+      <button type="button" onclick={chooseCover}>
+        {value.coverImageId ? 'Bild ändern' : 'Bild wählen'}
+      </button>
+      {#if value.coverImageId}
+        <button type="button" onclick={clearCover}>Entfernen</button>
+      {/if}
+    </div>
+  </div>
+
   <div class="map-field">
     <span class="map-label">Ort auf der Karte</span>
     <MapPicker
@@ -135,9 +165,25 @@
     font-weight: 400;
     padding: 0.4rem;
   }
-  .map-label {
+  .map-label,
+  .cover-label {
     font-size: 0.85rem;
     font-weight: 600;
     color: #4a5568;
+  }
+  .cover-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .cover-thumb {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 6px;
+  }
+  .cover-actions {
+    display: flex;
+    gap: 0.5rem;
   }
 </style>

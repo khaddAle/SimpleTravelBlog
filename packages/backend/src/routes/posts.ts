@@ -71,6 +71,7 @@ export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): voi
       lat: data.lat,
       lng: data.lng,
       ...(tripObjectId ? { tripId: new Types.ObjectId(tripObjectId) } : {}),
+      ...(data.coverImageId ? { coverImageId: data.coverImageId } : {}),
       // Default to draft for interactive creates; the importer publishes on
       // import by passing status + the original publishedAt (preserved by the
       // model's pre-save hook, which only stamps publishedAt when unset).
@@ -117,6 +118,7 @@ export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): voi
       if (data.placeName !== undefined) post.placeName = data.placeName;
       if (data.lat !== undefined) post.lat = data.lat;
       if (data.lng !== undefined) post.lng = data.lng;
+      if (data.coverImageId !== undefined) post.coverImageId = data.coverImageId || null;
       if (data.status !== undefined) post.status = data.status;
 
       await post.save();

@@ -122,6 +122,28 @@ describe('posts + trips integration', () => {
     expect(created.body.post.publishedAt).toBe(original);
   });
 
+  it('round-trips a coverImageId on create and PATCH (set then clear)', async () => {
+    const created = await createPost(postPayload({ coverImageId: 'cov123' }));
+    expect(created.status).toBe(201);
+    expect(created.body.post.coverImageId).toBe('cov123');
+    const id = created.body.post.id;
+
+    const fetched = await auth.agent.get(`/api/posts/${id}`);
+    expect(fetched.body.post.coverImageId).toBe('cov123');
+
+    const changed = await auth.agent
+      .patch(`/api/posts/${id}`)
+      .set('x-csrf-token', auth.csrf)
+      .send({ coverImageId: 'cov456' });
+    expect(changed.body.post.coverImageId).toBe('cov456');
+
+    const cleared = await auth.agent
+      .patch(`/api/posts/${id}`)
+      .set('x-csrf-token', auth.csrf)
+      .send({ coverImageId: '' });
+    expect(cleared.body.post.coverImageId).toBeUndefined();
+  });
+
   it('keeps the trip association when patching other fields', async () => {
     const trip = await createTrip('Alpen');
     const created = await createPost(postPayload({ tripId: trip.body.trip.id }));

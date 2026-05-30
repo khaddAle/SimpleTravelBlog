@@ -117,4 +117,19 @@ describe('PostEditor (edit)', () => {
       expect(patch).toHaveBeenCalledWith('p1', expect.objectContaining({ status: 'draft' })),
     );
   });
+
+  it('loads an existing cover image and preserves it on save', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'getPost').mockResolvedValue({ ...samplePost(), coverImageId: 'cov1' });
+    const patch = vi.spyOn(api, 'updatePost').mockResolvedValue(samplePost());
+    render(PostEditor, { params: { id: 'p1' } });
+    await screen.findByLabelText('Titel');
+    await user.click(screen.getByRole('button', { name: 'Entwurf speichern' }));
+    await waitFor(() =>
+      expect(patch).toHaveBeenCalledWith(
+        'p1',
+        expect.objectContaining({ coverImageId: 'cov1' }),
+      ),
+    );
+  });
 });

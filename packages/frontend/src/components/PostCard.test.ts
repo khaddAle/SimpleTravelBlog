@@ -33,4 +33,24 @@ describe('PostCard', () => {
       '/api/public/images/img1/thumb',
     );
   });
+
+  it('prefers an explicit coverImageId over the first block image', () => {
+    const { container } = render(PostCard, {
+      post: { ...post, coverImageId: 'cov9' },
+    });
+    expect(container.querySelector('img')).toHaveAttribute(
+      'src',
+      '/api/public/images/cov9/thumb',
+    );
+  });
+
+  it('falls back to the block thumbnail when no coverImageId is set', () => {
+    const { container } = render(PostCard, {
+      post: { ...post, coverImageId: undefined },
+    });
+    expect(container.querySelector('img')).toHaveAttribute(
+      'src',
+      '/api/public/images/img1/thumb',
+    );
+  });
 });

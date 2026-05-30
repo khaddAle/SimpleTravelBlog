@@ -10,6 +10,17 @@ describe('Settings model', () => {
     expect(s._id).toBe(SETTINGS_ID);
   });
 
+  it('persists backgroundImageIds and defaults them to an empty array', async () => {
+    const s = await Settings.create({ siteTitle: 'Reiseblog', accentColor: '#2b6cb0' });
+    expect(s.backgroundImageIds).toEqual([]);
+    const withBg = await Settings.findByIdAndUpdate(
+      SETTINGS_ID,
+      { backgroundImageIds: ['bg1', 'bg2'] },
+      { returnDocument: 'after' },
+    ).lean();
+    expect(withBg?.backgroundImageIds).toEqual(['bg1', 'bg2']);
+  });
+
   it('rejects a non-hex accent color', async () => {
     await expect(
       Settings.create({ siteTitle: 'Reiseblog', accentColor: 'blau' }),

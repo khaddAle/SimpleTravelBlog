@@ -14,6 +14,9 @@ const postSchema = new Schema(
     lat: { type: Number, required: true, min: -90, max: 90 },
     lng: { type: Number, required: true, min: -180, max: 180 },
     tripId: { type: Schema.Types.ObjectId, ref: 'Trip' },
+    // Optional per-post cover image (image shortId). Counts toward the image
+    // refcount / delete-guard; falls back to the first block thumbnail when unset.
+    coverImageId: { type: String },
     status: { type: String, enum: ['draft', 'published'], required: true, default: 'draft' },
     authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     publishedAt: { type: Date },
