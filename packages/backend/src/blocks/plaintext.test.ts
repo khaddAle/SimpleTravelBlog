@@ -27,8 +27,14 @@ describe('blockToPlaintext', () => {
     );
   });
 
-  it('yields empty string for galleries and dividers (no searchable text)', () => {
+  it('includes a gallery caption but not the image ids', () => {
+    expect(
+      blockToPlaintext({ type: 'gallery', imageIds: ['a', 'b'], caption: 'Strandtag' }),
+    ).toBe('Strandtag');
     expect(blockToPlaintext({ type: 'gallery', imageIds: ['a', 'b'] })).toBe('');
+  });
+
+  it('yields empty string for dividers (no searchable text)', () => {
     expect(blockToPlaintext({ type: 'divider' })).toBe('');
   });
 });

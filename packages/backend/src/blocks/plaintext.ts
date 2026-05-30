@@ -16,6 +16,7 @@ export function blockToPlaintext(block: Block): string {
     case 'quote':
       return block.source ? `${block.text} ${block.source}` : block.text;
     case 'gallery':
+      return block.caption ?? '';
     case 'divider':
       return '';
   }
