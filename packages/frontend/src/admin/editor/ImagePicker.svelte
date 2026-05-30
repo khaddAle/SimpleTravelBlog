@@ -159,6 +159,7 @@
       >
     </div>
     <div class="actions">
+      <span class="count" aria-live="polite">{selected.length} ausgewählt</span>
       <button type="button" onclick={onCancel}>Abbrechen</button>
       <button type="button" disabled={selected.length === 0} onclick={confirm}>Auswählen</button>
     </div>
@@ -207,6 +208,10 @@
     height: 100px;
     object-fit: cover;
     display: block;
+  }
+  .count {
+    font-size: 0.85rem;
+    color: #718096;
   }
   .err {
     color: #c53030;
