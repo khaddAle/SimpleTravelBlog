@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { push } from 'svelte-spa-router';
   import type { TripDto, CreatePostRequest, UpdatePostRequest, Block } from '@stb/shared';
-  import { api } from '../lib/api.js';
+  import { api, ApiError } from '../lib/api.js';
   import type { PostMetadata } from '../lib/types.js';
   import AdminLayout from './AdminLayout.svelte';
   import MetadataSidebar from './editor/MetadataSidebar.svelte';
@@ -89,6 +89,19 @@
     closePicker();
   }
 
+  /**
+   * Required metadata the post DTO enforces server-side. Validate it here so a
+   * gap (e.g. an empty Land/Ortsname) yields a precise German hint instead of an
+   * opaque "Speichern fehlgeschlagen." after a rejected round-trip.
+   */
+  function missingRequiredFields(): string[] {
+    const missing: string[] = [];
+    if (!metadata.title.trim()) missing.push('Titel');
+    if (!/^[A-Z]{2}$/.test(metadata.country)) missing.push('Land (ISO-Code, z. B. DE)');
+    if (!metadata.placeName.trim()) missing.push('Ortsname');
+    return missing;
+  }
+
   function buildBody(): CreatePostRequest {
     return {
       title: metadata.title,
@@ -105,8 +118,13 @@
   }
 
   async function save(status: 'draft' | 'published'): Promise<void> {
-    saving = true;
     error = '';
+    const missing = missingRequiredFields();
+    if (missing.length > 0) {
+      error = `Bitte Pflichtfelder ausfüllen: ${missing.join(', ')}.`;
+      return;
+    }
+    saving = true;
     try {
       if (editId) {
         const body: UpdatePostRequest = { ...buildBody(), status };
@@ -116,8 +134,13 @@
         if (status === 'published') await api.updatePost(created.id, { status: 'published' });
       }
       push('/admin');
-    } catch {
-      error = 'Speichern fehlgeschlagen.';
+    } catch (err) {
+      // Surface the server's reason for an unexpected failure; keep the plain
+      // generic message for non-API errors.
+      error =
+        err instanceof ApiError
+          ? `Speichern fehlgeschlagen: ${err.message}`
+          : 'Speichern fehlgeschlagen.';
     } finally {
       saving = false;
     }

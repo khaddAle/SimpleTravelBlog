@@ -38,6 +38,16 @@ function samplePost(): PostDto {
   };
 }
 
+/** Fill the metadata the post DTO requires (title + Land + Ortsname). */
+async function fillRequiredMeta(
+  user: ReturnType<typeof userEvent.setup>,
+  title = 'Neue Reise',
+): Promise<void> {
+  await user.type(await screen.findByLabelText('Titel'), title);
+  await user.type(screen.getByLabelText(/^Land/), 'DE');
+  await user.type(screen.getByLabelText('Ortsname'), 'Zugspitze');
+}
+
 beforeEach(() => {
   push.mockClear();
   auth.user = { id: 'u1', username: 'mum', role: 'admin' };
@@ -51,8 +61,7 @@ describe('PostEditor (create)', () => {
     const create = vi.spyOn(api, 'createPost').mockResolvedValue(samplePost());
     render(PostEditor, {});
 
-    const title = await screen.findByLabelText('Titel');
-    await user.type(title, 'Neue Reise');
+    await fillRequiredMeta(user);
     await user.click(screen.getByRole('button', { name: '+ Absatz' }));
     await user.click(screen.getByRole('button', { name: 'Entwurf speichern' }));
 
@@ -72,7 +81,7 @@ describe('PostEditor (create)', () => {
     vi.spyOn(api, 'createPost').mockResolvedValue(samplePost());
     const patch = vi.spyOn(api, 'updatePost').mockResolvedValue(samplePost());
     render(PostEditor, {});
-    await screen.findByLabelText('Titel');
+    await fillRequiredMeta(user);
     await user.click(screen.getByRole('button', { name: 'Veröffentlichen' }));
     await waitFor(() => expect(patch).toHaveBeenCalledWith('p1', { status: 'published' }));
   });
@@ -98,11 +107,26 @@ describe('PostEditor (create)', () => {
     expect(screen.getByLabelText('Nur unbenutzte')).toBeChecked();
   });
 
+  it('blocks save and names the missing required fields when Land/Ortsname are empty', async () => {
+    const user = userEvent.setup();
+    const create = vi.spyOn(api, 'createPost').mockResolvedValue(samplePost());
+    render(PostEditor, {});
+    const title = await screen.findByLabelText('Titel');
+    await user.type(title, 'Bilder-Optionen');
+    await user.click(screen.getByRole('button', { name: 'Entwurf speichern' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Land');
+    expect(alert).toHaveTextContent('Ortsname');
+    expect(create).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it('shows an error when saving fails', async () => {
     const user = userEvent.setup();
     vi.spyOn(api, 'createPost').mockRejectedValue(new Error('boom'));
     render(PostEditor, {});
-    await screen.findByLabelText('Titel');
+    await fillRequiredMeta(user);
     await user.click(screen.getByRole('button', { name: 'Entwurf speichern' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Speichern fehlgeschlagen.');
     expect(push).not.toHaveBeenCalled();
