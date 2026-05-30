@@ -91,6 +91,62 @@ describe('BlockEditor', () => {
     expect(onChange).toHaveBeenLastCalledWith([{ type: 'gallery', imageIds: ['a', 'b'] }]);
   });
 
+  it('inserts a fresh image with the unused-only filter on', async () => {
+    const user = userEvent.setup();
+    const pickImage = vi.fn().mockResolvedValue('img42');
+    setup([], { pickImage });
+    await user.click(screen.getByRole('button', { name: '+ Bild' }));
+    expect(pickImage).toHaveBeenCalledWith({ orphansOnly: true });
+  });
+
+  it('inserts a fresh gallery with the unused-only filter on', async () => {
+    const user = userEvent.setup();
+    const pickGallery = vi.fn().mockResolvedValue(['a']);
+    setup([], { pickGallery });
+    await user.click(screen.getByRole('button', { name: '+ Galerie' }));
+    expect(pickGallery).toHaveBeenCalledWith({ orphansOnly: true });
+  });
+
+  it('changes an image block via "Bild ändern" (filter off, replaces id)', async () => {
+    const user = userEvent.setup();
+    const pickImage = vi.fn().mockResolvedValue('img99');
+    const { onChange } = setup([{ type: 'image', imageId: 'img1', caption: 'Gipfel' }], { pickImage });
+    await user.click(screen.getByRole('button', { name: 'Bild ändern' }));
+    expect(pickImage).toHaveBeenCalledWith({ orphansOnly: false });
+    expect(onChange).toHaveBeenLastCalledWith([
+      { type: 'image', imageId: 'img99', caption: 'Gipfel' },
+    ]);
+  });
+
+  it('keeps the existing image when "Bild ändern" is cancelled', async () => {
+    const user = userEvent.setup();
+    const pickImage = vi.fn().mockResolvedValue(null);
+    const { onChange } = setup([{ type: 'image', imageId: 'img1' }], { pickImage });
+    await user.click(screen.getByRole('button', { name: 'Bild ändern' }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('edits a gallery via "Galerie bearbeiten" (filter off, pre-selects current)', async () => {
+    const user = userEvent.setup();
+    const pickGallery = vi.fn().mockResolvedValue(['a', 'b', 'c']);
+    const { onChange } = setup([{ type: 'gallery', imageIds: ['a', 'b'], caption: 'Tour' }], {
+      pickGallery,
+    });
+    await user.click(screen.getByRole('button', { name: 'Galerie bearbeiten' }));
+    expect(pickGallery).toHaveBeenCalledWith({ orphansOnly: false, selected: ['a', 'b'] });
+    expect(onChange).toHaveBeenLastCalledWith([
+      { type: 'gallery', imageIds: ['a', 'b', 'c'], caption: 'Tour' },
+    ]);
+  });
+
+  it('keeps the existing gallery when editing is cancelled or empty', async () => {
+    const user = userEvent.setup();
+    const pickGallery = vi.fn().mockResolvedValue(null);
+    const { onChange } = setup([{ type: 'gallery', imageIds: ['a', 'b'] }], { pickGallery });
+    await user.click(screen.getByRole('button', { name: 'Galerie bearbeiten' }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('edits an image caption', async () => {
     const user = userEvent.setup();
     const { onChange } = setup([{ type: 'image', imageId: 'img1' }]);

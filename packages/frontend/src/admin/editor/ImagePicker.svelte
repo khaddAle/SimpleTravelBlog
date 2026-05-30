@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import type { ImageDto } from '@stb/shared';
   import { api } from '../../lib/api.js';
   import type { EventSourceFactory } from '../../lib/uploads.js';
@@ -8,11 +9,22 @@
     mode?: 'single' | 'multiple';
     onSelect: (ids: string[]) => void;
     onCancel: () => void;
+    /** Start with the "Nur unbenutzte" filter on (fresh inserts); off when editing. */
+    initialOrphansOnly?: boolean;
+    /** Pre-select these ids (e.g. the gallery's current images when editing). */
+    initialSelected?: string[];
     /** Forwarded to UploadProgress for tests. */
     eventSourceFactory?: EventSourceFactory;
   }
 
-  let { mode = 'single', onSelect, onCancel, eventSourceFactory }: Props = $props();
+  let {
+    mode = 'single',
+    onSelect,
+    onCancel,
+    initialOrphansOnly = false,
+    initialSelected = [],
+    eventSourceFactory,
+  }: Props = $props();
 
   let images = $state<ImageDto[]>([]);
   let total = $state(0);
@@ -20,8 +32,9 @@
   const pageSize = 24;
   let q = $state('');
   let sort = $state<'newest' | 'oldest' | 'filename'>('newest');
-  let orphansOnly = $state(false);
-  let selected = $state<string[]>([]);
+  // Props are init-only seeds for this local state; untrack documents that.
+  let orphansOnly = $state(untrack(() => initialOrphansOnly));
+  let selected = $state<string[]>(untrack(() => [...initialSelected]));
 
   /** One in-flight or finished upload. `uploadId` is null until the POST returns. */
   interface UploadJob {

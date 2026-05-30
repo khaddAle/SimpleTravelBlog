@@ -88,6 +88,16 @@ describe('PostEditor (create)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
+  it('opens the picker with the unused-only filter on for a fresh "+ Bild"', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'listImages').mockResolvedValue({ items: [], page: 1, pageSize: 24, total: 0 });
+    render(PostEditor, {});
+    await screen.findByLabelText('Titel');
+    await user.click(screen.getByRole('button', { name: '+ Bild' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByLabelText('Nur unbenutzte')).toBeChecked();
+  });
+
   it('shows an error when saving fails', async () => {
     const user = userEvent.setup();
     vi.spyOn(api, 'createPost').mockRejectedValue(new Error('boom'));

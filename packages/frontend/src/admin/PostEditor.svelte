@@ -28,7 +28,14 @@
 
   // Image-picker modal: a Promise-based bridge so BlockEditor can `await` a pick.
   let pickerMode = $state<null | 'single' | 'multiple'>(null);
+  let pickerOrphansOnly = $state(false);
+  let pickerSelected = $state<string[]>([]);
   let pickerResolve: ((ids: string[] | null) => void) | null = null;
+
+  interface PickOpts {
+    orphansOnly?: boolean;
+    selected?: string[];
+  }
 
   onMount(async () => {
     try {
@@ -53,27 +60,33 @@
     }
   });
 
-  function openPicker(mode: 'single' | 'multiple'): Promise<string[] | null> {
+  function openPicker(mode: 'single' | 'multiple', opts?: PickOpts): Promise<string[] | null> {
     return new Promise((resolve) => {
       pickerMode = mode;
+      pickerOrphansOnly = opts?.orphansOnly ?? false;
+      pickerSelected = opts?.selected ?? [];
       pickerResolve = resolve;
     });
   }
-  function pickImage(): Promise<string | null> {
-    return openPicker('single').then((ids) => (ids && ids[0] ? ids[0] : null));
+  function pickImage(opts?: PickOpts): Promise<string | null> {
+    return openPicker('single', opts).then((ids) => (ids && ids[0] ? ids[0] : null));
   }
-  function pickGallery(): Promise<string[] | null> {
-    return openPicker('multiple');
+  function pickGallery(opts?: PickOpts): Promise<string[] | null> {
+    return openPicker('multiple', opts);
+  }
+  function closePicker(): void {
+    pickerMode = null;
+    pickerOrphansOnly = false;
+    pickerSelected = [];
+    pickerResolve = null;
   }
   function onPickerSelect(ids: string[]): void {
     pickerResolve?.(ids);
-    pickerMode = null;
-    pickerResolve = null;
+    closePicker();
   }
   function onPickerCancel(): void {
     pickerResolve?.(null);
-    pickerMode = null;
-    pickerResolve = null;
+    closePicker();
   }
 
   function buildBody(): CreatePostRequest {
@@ -140,7 +153,13 @@
   {#if pickerMode}
     <div class="modal" role="dialog" aria-modal="true" aria-label="Bildauswahl">
       <div class="modal-body">
-        <ImagePicker mode={pickerMode} onSelect={onPickerSelect} onCancel={onPickerCancel} />
+        <ImagePicker
+          mode={pickerMode}
+          initialOrphansOnly={pickerOrphansOnly}
+          initialSelected={pickerSelected}
+          onSelect={onPickerSelect}
+          onCancel={onPickerCancel}
+        />
       </div>
     </div>
   {/if}

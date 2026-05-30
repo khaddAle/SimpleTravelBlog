@@ -54,8 +54,28 @@ the plan and the per-phase memory note.
 Post-cutover polish ideas from dev testing (2026-05-30). All TDD, 80% gate,
 German UI strings inline. Grouped by effort. None block the cutover.
 
-**ALL DONE 2026-05-30** (A–G). The two last ones (per-post cover, blog backgrounds)
-landed this session; the rest were committed earlier (`3973b83`…`cbad267`).
+**First batch A–G: ALL DONE 2026-05-30** (per-post cover + blog backgrounds landed
+this session as `7ae5d2c`, released `v0.2.0`, rolled to dev; the rest committed
+earlier `3973b83`…`cbad267`). User confirmed F+G working on dev.
+
+### Round 2 — DONE 2026-05-30 (H + I, built together TDD)
+
+- [X] **H — Edit / replace the image selection in image & gallery blocks.**
+      `BlockEditor.svelte` now has a **"Bild ändern"** button (image branch →
+      re-opens `pickImage`, replaces `block.imageId`, keeps existing on cancel) and a
+      **"Galerie bearbeiten"** button (gallery branch → re-opens `pickGallery`
+      pre-selecting `block.imageIds`, replaces them, keeps existing on cancel/empty).
+      Pure frontend. (`BlockEditor.test.ts` +6.)
+- [X] **I — Context-aware "Nur unbenutzte" (orphansOnly) default — option (b).**
+      `ImagePicker.svelte` gained `initialOrphansOnly?` + `initialSelected?` props
+      (seeded via `untrack`). `PostEditor.svelte` bridge `openPicker(mode, opts?)`
+      forwards `{orphansOnly, selected}` → picker. Defaults: **fresh insert →
+      `orphansOnly:true`** (BlockEditor `+ Bild`/`+ Galerie`, fresh cover, Settings
+      backgrounds); **edit/replace → `orphansOnly:false`** ("Bild ändern", "Galerie
+      bearbeiten" + `selected`, changing an existing cover) so the current image
+      stays visible. Pure frontend, no schema change. (+ImagePicker/Settings/
+      MetadataSidebar/PostEditor tests.) Plan in memory `project_round2-hi-plan.md`.
+      Full suite 453 pass (+12), typecheck + eslint clean. NOT yet committed.
 
 ### Small — pure frontend, isolated
 

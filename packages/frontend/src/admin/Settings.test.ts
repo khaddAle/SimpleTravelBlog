@@ -121,6 +121,21 @@ describe('Settings', () => {
     );
   });
 
+  it('opens the background picker with the unused-only filter on', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'getSettings').mockResolvedValue({ siteTitle: 'Alt', accentColor: '#000000' });
+    vi.spyOn(api, 'listImages').mockResolvedValue({ items: [], page: 1, pageSize: 24, total: 0 });
+    render(Settings);
+    await screen.findByLabelText('Seitentitel');
+    await user.click(screen.getByRole('button', { name: 'Hintergrundbilder hinzufügen' }));
+    expect(await screen.findByLabelText('Nur unbenutzte')).toBeChecked();
+    await waitFor(() =>
+      expect(api.listImages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ orphansOnly: true }),
+      ),
+    );
+  });
+
   it('shows an error when saving fails', async () => {
     const user = userEvent.setup();
     vi.spyOn(api, 'getSettings').mockResolvedValue({ siteTitle: 'Alt', accentColor: '#000000' });

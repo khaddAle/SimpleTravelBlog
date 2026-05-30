@@ -85,15 +85,28 @@ describe('MetadataSidebar', () => {
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ placeName: 'Gipfel' }));
   });
 
-  it('chooses a cover image via the picker', async () => {
+  it('chooses a cover image via the picker (fresh: unused-only on)', async () => {
     const user = userEvent.setup();
     const pickImage = vi.fn().mockResolvedValue('img9');
     render(MetadataSidebar, { metadata: base, trips, onChange, pickImage });
     await user.click(screen.getByRole('button', { name: 'Bild wählen' }));
-    expect(pickImage).toHaveBeenCalled();
+    expect(pickImage).toHaveBeenCalledWith({ orphansOnly: true });
     expect(onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ coverImageId: 'img9' }),
     );
+  });
+
+  it('changes an existing cover with the unused-only filter off', async () => {
+    const user = userEvent.setup();
+    const pickImage = vi.fn().mockResolvedValue('img9');
+    render(MetadataSidebar, {
+      metadata: { ...base, coverImageId: 'old' },
+      trips,
+      onChange,
+      pickImage,
+    });
+    await user.click(screen.getByRole('button', { name: 'Bild ändern' }));
+    expect(pickImage).toHaveBeenCalledWith({ orphansOnly: false });
   });
 
   it('shows the current cover thumbnail and clears it', async () => {

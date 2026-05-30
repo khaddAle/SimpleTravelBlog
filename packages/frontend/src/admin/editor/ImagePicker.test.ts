@@ -98,6 +98,36 @@ describe('ImagePicker browsing', () => {
     });
   });
 
+  it('starts with the orphans-only filter checked when initialOrphansOnly is set', async () => {
+    render(ImagePicker, { onSelect: vi.fn(), onCancel: vi.fn(), initialOrphansOnly: true });
+    await screen.findByLabelText('alpha.jpg');
+    expect(screen.getByLabelText('Nur unbenutzte')).toBeChecked();
+    await waitFor(() => {
+      expect(api.listImages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ orphansOnly: true }),
+      );
+    });
+  });
+
+  it('defaults the orphans-only filter to unchecked', async () => {
+    render(ImagePicker, { onSelect: vi.fn(), onCancel: vi.fn() });
+    await screen.findByLabelText('alpha.jpg');
+    expect(screen.getByLabelText('Nur unbenutzte')).not.toBeChecked();
+  });
+
+  it('pre-selects the images passed via initialSelected', async () => {
+    render(ImagePicker, {
+      mode: 'multiple',
+      onSelect: vi.fn(),
+      onCancel: vi.fn(),
+      initialSelected: ['a', 'b'],
+    });
+    await screen.findByLabelText('alpha.jpg');
+    expect(screen.getByText('2 ausgewählt')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Auswählen' })).toBeEnabled();
+    expect(screen.getByLabelText('alpha.jpg')).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('shows an empty message when there are no images', async () => {
     vi.mocked(api.listImages).mockResolvedValue({ items: [], page: 1, pageSize: 24, total: 0 });
     render(ImagePicker, { onSelect: vi.fn(), onCancel: vi.fn() });

@@ -104,6 +104,7 @@
       <div class="modal-body">
         <ImagePicker
           mode="multiple"
+          initialOrphansOnly={true}
           onSelect={onPickerSelect}
           onCancel={() => (pickerOpen = false)}
         />

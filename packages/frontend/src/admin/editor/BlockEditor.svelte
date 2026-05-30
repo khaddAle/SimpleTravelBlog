@@ -3,13 +3,18 @@
   import type { Block, BlockType } from '@stb/shared';
   import { imageUrl } from '../../lib/images.js';
 
+  interface PickOpts {
+    orphansOnly?: boolean;
+    selected?: string[];
+  }
+
   interface Props {
     blocks: Block[];
     onChange: (blocks: Block[]) => void;
     /** Opens the image picker; resolves to a chosen image shortId or null. */
-    pickImage?: () => Promise<string | null>;
+    pickImage?: (opts?: PickOpts) => Promise<string | null>;
     /** Opens the gallery picker; resolves to chosen image shortIds or null. */
-    pickGallery?: () => Promise<string[] | null>;
+    pickGallery?: (opts?: PickOpts) => Promise<string[] | null>;
   }
 
   let { blocks, onChange, pickImage, pickGallery }: Props = $props();
@@ -60,14 +65,35 @@
     add({ type: 'divider' });
   }
 
+  // Fresh inserts default the picker to "Nur unbenutzte" so newly uploaded
+  // images surface first; editing (below) keeps it off so the current image
+  // stays visible.
   async function insertImage(): Promise<void> {
-    const id = await pickImage?.();
+    const id = await pickImage?.({ orphansOnly: true });
     if (id) add({ type: 'image', imageId: id });
   }
 
   async function insertGallery(): Promise<void> {
-    const ids = await pickGallery?.();
+    const ids = await pickGallery?.({ orphansOnly: true });
     if (ids && ids.length > 0) add({ type: 'gallery', imageIds: ids });
+  }
+
+  async function changeImage(index: number): Promise<void> {
+    const entry = entries[index]!;
+    if (entry.block.type !== 'image') return;
+    const id = await pickImage?.({ orphansOnly: false });
+    if (!id) return; // cancelled — keep the existing image
+    entry.block = { ...entry.block, imageId: id };
+    emit();
+  }
+
+  async function changeGallery(index: number): Promise<void> {
+    const entry = entries[index]!;
+    if (entry.block.type !== 'gallery') return;
+    const ids = await pickGallery?.({ orphansOnly: false, selected: entry.block.imageIds });
+    if (!ids || ids.length === 0) return; // cancelled/empty — keep the existing gallery
+    entry.block = { ...entry.block, imageIds: ids };
+    emit();
   }
 
   function setText(index: number, text: string): void {
@@ -161,6 +187,7 @@
           />
         {:else if entry.block.type === 'image'}
           <img class="preview" src={imageUrl(entry.block.imageId, 'thumb')} alt="" />
+          <button type="button" class="change" onclick={() => changeImage(index)}>Bild ändern</button>
           <input
             type="text"
             value={entry.block.caption ?? ''}
@@ -175,6 +202,9 @@
               <img src={imageUrl(id, 'thumb')} alt="" />
             {/each}
           </div>
+          <button type="button" class="change" onclick={() => changeGallery(index)}
+            >Galerie bearbeiten</button
+          >
           <input
             type="text"
             value={entry.block.caption ?? ''}
@@ -245,6 +275,11 @@
     max-height: 80px;
     border-radius: 4px;
     margin-bottom: 0.4rem;
+  }
+  .change {
+    display: block;
+    margin-bottom: 0.4rem;
+    font-size: 0.85rem;
   }
   .gallery-thumbs {
     display: grid;

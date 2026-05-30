@@ -6,11 +6,16 @@
   import { imageUrl } from '../../lib/images.js';
   import MapPicker from './MapPicker.svelte';
 
+  interface PickOpts {
+    orphansOnly?: boolean;
+    selected?: string[];
+  }
+
   interface Props {
     metadata: PostMetadata;
     trips: TripDto[];
     onChange: (metadata: PostMetadata) => void;
-    pickImage?: () => Promise<string | null>;
+    pickImage?: (opts?: PickOpts) => Promise<string | null>;
   }
 
   let { metadata, trips, onChange, pickImage }: Props = $props();
@@ -34,7 +39,9 @@
   }
 
   async function chooseCover(): Promise<void> {
-    const id = await pickImage?.();
+    // Fresh cover → surface unused images first; changing an existing cover →
+    // show all so the current one stays reachable.
+    const id = await pickImage?.({ orphansOnly: !value.coverImageId });
     if (id) {
       value.coverImageId = id;
       emit();
