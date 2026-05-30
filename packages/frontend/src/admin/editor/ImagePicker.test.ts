@@ -57,6 +57,17 @@ describe('ImagePicker browsing', () => {
     expect(onSelect).toHaveBeenCalledWith(['a', 'b']);
   });
 
+  it('shows how many images are currently selected', async () => {
+    const user = userEvent.setup();
+    render(ImagePicker, { mode: 'multiple', onSelect: vi.fn(), onCancel: vi.fn() });
+    await screen.findByLabelText('alpha.jpg');
+    expect(screen.getByText('0 ausgewählt')).toBeInTheDocument();
+    await user.click(screen.getByLabelText('alpha.jpg'));
+    expect(screen.getByText('1 ausgewählt')).toBeInTheDocument();
+    await user.click(screen.getByLabelText('beta.jpg'));
+    expect(screen.getByText('2 ausgewählt')).toBeInTheDocument();
+  });
+
   it('confirm is disabled with no selection', async () => {
     render(ImagePicker, { onSelect: vi.fn(), onCancel: vi.fn() });
     await screen.findByLabelText('alpha.jpg');
