@@ -165,6 +165,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    /* Above Leaflet, whose controls sit at z-index 1000 — without this the
+       location-picker map paints over the image-picker dialog. */
+    z-index: 2000;
   }
   .modal-body {
     background: #fff;
