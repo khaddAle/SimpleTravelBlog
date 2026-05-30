@@ -128,6 +128,35 @@ describe('ImagePicker browsing', () => {
     expect(screen.getByLabelText('alpha.jpg')).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('hides images used elsewhere in the post when orphans-only is on', async () => {
+    render(ImagePicker, {
+      onSelect: vi.fn(),
+      onCancel: vi.fn(),
+      initialOrphansOnly: true,
+      excludeIds: ['b'],
+    });
+    expect(await screen.findByLabelText('alpha.jpg')).toBeInTheDocument();
+    expect(screen.queryByLabelText('beta.jpg')).toBeNull();
+  });
+
+  it('does not hide used images while the orphans-only filter is off', async () => {
+    render(ImagePicker, { onSelect: vi.fn(), onCancel: vi.fn(), excludeIds: ['b'] });
+    expect(await screen.findByLabelText('alpha.jpg')).toBeInTheDocument();
+    expect(screen.getByLabelText('beta.jpg')).toBeInTheDocument();
+  });
+
+  it('keeps an excluded image visible when it is already selected', async () => {
+    render(ImagePicker, {
+      mode: 'multiple',
+      onSelect: vi.fn(),
+      onCancel: vi.fn(),
+      initialOrphansOnly: true,
+      excludeIds: ['b'],
+      initialSelected: ['b'],
+    });
+    expect(await screen.findByLabelText('beta.jpg')).toBeInTheDocument();
+  });
+
   it('shows an empty message when there are no images', async () => {
     vi.mocked(api.listImages).mockResolvedValue({ items: [], page: 1, pageSize: 24, total: 0 });
     render(ImagePicker, { onSelect: vi.fn(), onCancel: vi.fn() });

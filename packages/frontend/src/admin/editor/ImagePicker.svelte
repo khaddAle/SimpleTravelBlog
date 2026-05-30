@@ -13,6 +13,13 @@
     initialOrphansOnly?: boolean;
     /** Pre-select these ids (e.g. the gallery's current images when editing). */
     initialSelected?: string[];
+    /**
+     * Image ids already used in the current (possibly unsaved) post. While
+     * "Nur unbenutzte" is on, these are hidden too — the server orphan filter
+     * only knows persisted references, so without this freshly-placed images
+     * would still appear as unused.
+     */
+    excludeIds?: string[];
     /** Forwarded to UploadProgress for tests. */
     eventSourceFactory?: EventSourceFactory;
   }
@@ -23,6 +30,7 @@
     onCancel,
     initialOrphansOnly = false,
     initialSelected = [],
+    excludeIds = [],
     eventSourceFactory,
   }: Props = $props();
 
@@ -51,6 +59,15 @@
   const MAX_CONCURRENT_UPLOADS = 3;
 
   const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
+
+  // When showing only unused images, also drop ids already placed elsewhere in
+  // this post — but never hide one that's currently selected, so an edited
+  // gallery's own images stay visible.
+  const visibleImages = $derived(
+    orphansOnly && excludeIds.length > 0
+      ? images.filter((img) => !excludeIds.includes(img.id) || selected.includes(img.id))
+      : images,
+  );
 
   async function load(): Promise<void> {
     const res = await api.listImages({ page, pageSize, q, orphansOnly, sort });
@@ -180,11 +197,11 @@
     </ul>
   {/if}
 
-  {#if images.length === 0}
+  {#if visibleImages.length === 0}
     <p class="empty">Keine Bilder gefunden.</p>
   {:else}
     <ul class="grid">
-      {#each images as image (image.id)}
+      {#each visibleImages as image (image.id)}
         <li>
           <button
             type="button"

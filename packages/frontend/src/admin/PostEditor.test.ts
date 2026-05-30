@@ -152,6 +152,38 @@ describe('PostEditor (edit)', () => {
     );
   });
 
+  it('hides images already used by the post from a fresh gallery picker', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'getPost').mockResolvedValue({
+      ...samplePost(),
+      blocks: [{ type: 'gallery', imageIds: ['b'] }],
+    });
+    const img = (id: string, filename: string) => ({
+      id,
+      originalFilename: filename,
+      mime: 'image/jpeg',
+      width: 800,
+      height: 600,
+      displayUrl: `/api/public/images/${id}/display`,
+      thumbUrl: `/api/public/images/${id}/thumb`,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    vi.spyOn(api, 'listImages').mockResolvedValue({
+      items: [img('a', 'alpha.jpg'), img('b', 'beta.jpg')],
+      page: 1,
+      pageSize: 24,
+      total: 2,
+    });
+    render(PostEditor, { params: { id: 'p1' } });
+    await screen.findByLabelText('Titel');
+    await user.click(screen.getByRole('button', { name: '+ Galerie' }));
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(await screen.findByLabelText('alpha.jpg')).toBeInTheDocument();
+    // 'b' is already used by the post's gallery → hidden from the unused picker.
+    expect(screen.queryByLabelText('beta.jpg')).toBeNull();
+  });
+
   it('loads an existing cover image and preserves it on save', async () => {
     const user = userEvent.setup();
     vi.spyOn(api, 'getPost').mockResolvedValue({ ...samplePost(), coverImageId: 'cov1' });

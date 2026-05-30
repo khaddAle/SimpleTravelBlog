@@ -4,6 +4,7 @@
   import type { TripDto, CreatePostRequest, UpdatePostRequest, Block } from '@stb/shared';
   import { api, ApiError } from '../lib/api.js';
   import type { PostMetadata } from '../lib/types.js';
+  import { collectImageIds } from '../lib/imageRefs.js';
   import AdminLayout from './AdminLayout.svelte';
   import MetadataSidebar from './editor/MetadataSidebar.svelte';
   import BlockEditor from './editor/BlockEditor.svelte';
@@ -21,6 +22,9 @@
     lng: 10.4515,
   });
   let blocks = $state<Block[]>([]);
+  // Images already placed in this (possibly unsaved) post — hidden from the
+  // "Nur unbenutzte" picker so freshly-selected images stop showing as unused.
+  const usedImageIds = $derived(collectImageIds(blocks, metadata.coverImageId));
   let trips = $state<TripDto[]>([]);
   let loading = $state(true);
   let saving = $state(false);
@@ -180,6 +184,7 @@
           mode={pickerMode}
           initialOrphansOnly={pickerOrphansOnly}
           initialSelected={pickerSelected}
+          excludeIds={usedImageIds}
           onSelect={onPickerSelect}
           onCancel={onPickerCancel}
         />
