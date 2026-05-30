@@ -4,6 +4,8 @@
   import type { PostMetadata } from '../../lib/types.js';
   import { toDateInputValue, fromDateInputValue } from '../../lib/dates.js';
   import { imageUrl } from '../../lib/images.js';
+  import { reverseGeocode } from '../../lib/nominatim.js';
+  import { fillMissingPlace } from '../../lib/metadata.js';
   import MapPicker from './MapPicker.svelte';
 
   interface PickOpts {
@@ -52,6 +54,26 @@
     delete value.coverImageId;
     emit();
   }
+
+  async function handleMapChange(lat: number, lng: number): Promise<void> {
+    value.lat = lat;
+    value.lng = lng;
+    emit();
+    // Pre-fill the required Land/Ortsname from the chosen point, but only while
+    // they're still empty — so we never clobber a manual entry and avoid a
+    // needless geocoder call once both are set. Best-effort: a geocoder failure
+    // must never block picking a location.
+    const needsPlace = !/^[A-Z]{2}$/.test(value.country) || !value.placeName.trim();
+    if (!needsPlace) return;
+    try {
+      const filled = fillMissingPlace(value, await reverseGeocode(lat, lng));
+      value.country = filled.country;
+      value.placeName = filled.placeName;
+      emit();
+    } catch {
+      // ignore — the user can still type Land/Ortsname by hand
+    }
+  }
 </script>
 
 <aside class="metadata">
@@ -89,10 +111,11 @@
   </label>
 
   <label>
-    Land (ISO, z. B. DE)
+    <span class="req">Land (ISO, z. B. DE)</span>
     <input
       type="text"
       maxlength="2"
+      required
       value={value.country}
       oninput={(e) => {
         value.country = e.currentTarget.value.toUpperCase();
@@ -102,9 +125,10 @@
   </label>
 
   <label>
-    Ortsname
+    <span class="req">Ortsname</span>
     <input
       type="text"
+      required
       value={value.placeName}
       oninput={(e) => {
         value.placeName = e.currentTarget.value;
@@ -143,11 +167,7 @@
     <MapPicker
       lat={value.lat}
       lng={value.lng}
-      onChange={(lat, lng) => {
-        value.lat = lat;
-        value.lng = lng;
-        emit();
-      }}
+      onChange={(lat, lng) => void handleMapChange(lat, lng)}
     />
   </div>
 </aside>
@@ -177,6 +197,12 @@
     font-size: 0.85rem;
     font-weight: 600;
     color: #4a5568;
+  }
+  /* Visual required marker; rendered via CSS so it stays out of the input's
+     accessible name (label queries keep matching "Ortsname"). */
+  .req::after {
+    content: ' *';
+    color: #c53030;
   }
   .cover-field {
     display: flex;

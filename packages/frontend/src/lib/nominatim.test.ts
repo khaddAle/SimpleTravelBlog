@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { geocode } from './nominatim.js';
+import { geocode, reverseGeocode } from './nominatim.js';
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -49,5 +49,41 @@ describe('geocode', () => {
   it('throws on a non-ok response', async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 503, json: async () => ({}) });
     await expect(geocode('Berlin')).rejects.toThrow('Geocoding fehlgeschlagen (503)');
+  });
+});
+
+describe('reverseGeocode', () => {
+  it('builds the reverse URL and maps country + place', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ address: { country_code: 'de', city: 'Berlin' }, name: 'X' }),
+    });
+    const res = await reverseGeocode(52.52, 13.405);
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(url).toContain('https://nominatim.openstreetmap.org/reverse');
+    expect(url).toContain('lat=52.52');
+    expect(url).toContain('lon=13.405');
+    expect(url).toContain('addressdetails=1');
+    expect(res).toEqual({ countryCode: 'DE', placeName: 'Berlin' });
+  });
+
+  it('uppercases the country code and falls back through town/village', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ address: { country_code: 'fr', village: 'Èze' } }),
+    });
+    expect(await reverseGeocode(43.7, 7.36)).toEqual({ countryCode: 'FR', placeName: 'Èze' });
+  });
+
+  it('returns an empty result when the address is missing', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    expect(await reverseGeocode(0, 0)).toEqual({});
+  });
+
+  it('throws on a non-ok response', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 503, json: async () => ({}) });
+    await expect(reverseGeocode(1, 2)).rejects.toThrow('Reverse-Geocoding fehlgeschlagen (503)');
   });
 });

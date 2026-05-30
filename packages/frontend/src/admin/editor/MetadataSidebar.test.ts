@@ -43,6 +43,12 @@ describe('MetadataSidebar', () => {
     expect((screen.getByLabelText(/Land/) as HTMLInputElement).value).toBe('DE');
   });
 
+  it('marks Land and Ortsname as required', () => {
+    render(MetadataSidebar, { metadata: base, trips, onChange });
+    expect(screen.getByLabelText(/Land/)).toBeRequired();
+    expect(screen.getByLabelText('Ortsname')).toBeRequired();
+  });
+
   it('uppercases the country code on input', async () => {
     const user = userEvent.setup();
     render(MetadataSidebar, { metadata: { ...base, country: '' }, trips, onChange });

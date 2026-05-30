@@ -10,13 +10,35 @@ export interface GeocodeResult {
   lng: number;
 }
 
+/** Country/place derived from coordinates; both best-effort and may be absent. */
+export interface ReverseGeocodeResult {
+  countryCode?: string;
+  placeName?: string;
+}
+
 interface NominatimRow {
   display_name?: unknown;
   lat?: unknown;
   lon?: unknown;
 }
 
+interface NominatimAddress {
+  country_code?: unknown;
+  city?: unknown;
+  town?: unknown;
+  village?: unknown;
+  hamlet?: unknown;
+  municipality?: unknown;
+  county?: unknown;
+}
+
+interface NominatimReverseRow {
+  address?: NominatimAddress;
+  name?: unknown;
+}
+
 const ENDPOINT = 'https://nominatim.openstreetmap.org/search';
+const REVERSE_ENDPOINT = 'https://nominatim.openstreetmap.org/reverse';
 
 export async function geocode(query: string, limit = 5): Promise<GeocodeResult[]> {
   const trimmed = query.trim();
@@ -46,4 +68,44 @@ export async function geocode(query: string, limit = 5): Promise<GeocodeResult[]
       return { displayName: r.display_name, lat, lng };
     })
     .filter((r): r is GeocodeResult => r !== null);
+}
+
+/**
+ * Resolve coordinates to an ISO country code and a place name (the map picker
+ * uses this to pre-fill the required Land/Ortsname fields). Best-effort: returns
+ * whatever Nominatim provides, possibly an empty object.
+ */
+export async function reverseGeocode(lat: number, lng: number): Promise<ReverseGeocodeResult> {
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lng),
+    format: 'jsonv2',
+    addressdetails: '1',
+  });
+  const res = await fetch(`${REVERSE_ENDPOINT}?${params.toString()}`, {
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`Reverse-Geocoding fehlgeschlagen (${res.status})`);
+
+  const data = (await res.json()) as unknown;
+  if (!data || typeof data !== 'object') return {};
+  const row = data as NominatimReverseRow;
+  const addr: NominatimAddress = row.address ?? {};
+
+  const result: ReverseGeocodeResult = {};
+  if (typeof addr.country_code === 'string' && /^[a-z]{2}$/i.test(addr.country_code)) {
+    result.countryCode = addr.country_code.toUpperCase();
+  }
+  // Prefer the most specific populated-place label, widening to the county.
+  const place = [
+    addr.city,
+    addr.town,
+    addr.village,
+    addr.hamlet,
+    addr.municipality,
+    addr.county,
+  ].find((v): v is string => typeof v === 'string' && v.length > 0);
+  const placeName = place ?? (typeof row.name === 'string' && row.name ? row.name : undefined);
+  if (placeName) result.placeName = placeName;
+  return result;
 }
