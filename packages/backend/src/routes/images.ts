@@ -39,15 +39,15 @@ export function registerImageRoutes(app: FastifyInstance, ctx: RouteContext): vo
   }): Promise<void> {
     const { uploadId, imageId, buffer, filename, mime, uploaderId } = args;
     try {
-      progress.publish(uploadId, { type: 'progress', pct: 10 });
+      await progress.publish(uploadId, { type: 'progress', pct: 10 });
       const processed = await processImage(buffer);
-      progress.publish(uploadId, { type: 'progress', pct: 60 });
+      await progress.publish(uploadId, { type: 'progress', pct: 60 });
 
       const displayKey = displayKeyFor(imageId);
       const thumbKey = thumbKeyFor(imageId);
       await storage.putObject(displayKey, processed.display, 'image/webp');
       await storage.putObject(thumbKey, processed.thumb, 'image/webp');
-      progress.publish(uploadId, { type: 'progress', pct: 90 });
+      await progress.publish(uploadId, { type: 'progress', pct: 90 });
 
       const doc = await Image.create({
         shortId: imageId,
@@ -59,9 +59,12 @@ export function registerImageRoutes(app: FastifyInstance, ctx: RouteContext): vo
         height: processed.height,
         uploaderId,
       });
-      progress.publish(uploadId, { type: 'done', image: toImageDto(doc.toObject()) });
+      await progress.publish(uploadId, {
+        type: 'done',
+        image: toImageDto(doc.toObject()),
+      });
     } catch (err) {
-      progress.publish(uploadId, {
+      await progress.publish(uploadId, {
         type: 'error',
         message: err instanceof Error ? err.message : 'upload failed',
       });
@@ -80,7 +83,7 @@ export function registerImageRoutes(app: FastifyInstance, ctx: RouteContext): vo
       async (id) => (await Image.exists({ shortId: id })) != null,
     );
     const uploadId = randomUUID();
-    progress.create(uploadId);
+    await progress.create(uploadId);
 
     // Fire-and-forget; the client tracks completion over the SSE channel.
     void runPipeline({
@@ -101,7 +104,9 @@ export function registerImageRoutes(app: FastifyInstance, ctx: RouteContext): vo
     auth,
     async (req, reply) => {
       const { uploadId } = req.params;
-      if (!progress.has(uploadId)) throw app.httpErrors.notFound('unknown upload');
+      if (!(await progress.has(uploadId))) {
+        throw app.httpErrors.notFound('unknown upload');
+      }
 
       reply.hijack();
       const raw = reply.raw;
@@ -111,7 +116,7 @@ export function registerImageRoutes(app: FastifyInstance, ctx: RouteContext): vo
         Connection: 'keep-alive',
       });
 
-      const off = progress.subscribe(uploadId, (event) => {
+      const off = await progress.subscribe(uploadId, (event) => {
         raw.write(`data: ${JSON.stringify(event)}\n\n`);
         if (event.type !== 'progress') raw.end();
       });

@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
+import RedisMock from 'ioredis-mock';
+import type { Redis } from 'ioredis';
 import { createProgressHub, type UploadProgressEvent } from './progress.js';
 import type { ImageDto } from '@stb/shared';
 
@@ -13,70 +15,93 @@ const image: ImageDto = {
   createdAt: '2026-05-29T00:00:00.000Z',
 };
 
-afterEach(() => {
-  vi.useRealTimers();
+// Pub/sub delivery is event-loop deferred; let it flush before asserting.
+const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 10));
+
+let redis: Redis;
+
+beforeEach(async () => {
+  redis = new RedisMock() as unknown as Redis;
+  await redis.flushall();
 });
 
-describe('progress hub', () => {
-  it('delivers live events to an existing subscriber', () => {
-    const hub = createProgressHub();
-    hub.create('u1');
+describe('progress hub (Redis-backed)', () => {
+  it('delivers live events to an existing subscriber', async () => {
+    const hub = createProgressHub(redis);
+    await hub.create('u1');
     const seen: UploadProgressEvent[] = [];
-    hub.subscribe('u1', (e) => seen.push(e));
+    const off = await hub.subscribe('u1', (e) => seen.push(e));
 
-    hub.publish('u1', { type: 'progress', pct: 50 });
-    hub.publish('u1', { type: 'done', image });
+    await hub.publish('u1', { type: 'progress', pct: 50 });
+    await hub.publish('u1', { type: 'done', image });
+    await tick();
 
     expect(seen).toEqual([
       { type: 'progress', pct: 50 },
       { type: 'done', image },
     ]);
-    expect(hub.isDone('u1')).toBe(true);
+    expect(await hub.isDone('u1')).toBe(true);
+    off();
   });
 
-  it('replays buffered events to a late subscriber', () => {
-    const hub = createProgressHub();
-    hub.create('u2');
-    hub.publish('u2', { type: 'progress', pct: 10 });
-    hub.publish('u2', { type: 'done', image });
+  it('replays buffered events to a late subscriber', async () => {
+    const hub = createProgressHub(redis);
+    await hub.create('u2');
+    await hub.publish('u2', { type: 'progress', pct: 10 });
+    await hub.publish('u2', { type: 'done', image });
 
     const seen: UploadProgressEvent[] = [];
-    hub.subscribe('u2', (e) => seen.push(e));
+    const off = await hub.subscribe('u2', (e) => seen.push(e));
+    await tick();
     expect(seen).toEqual([
       { type: 'progress', pct: 10 },
       { type: 'done', image },
     ]);
+    off();
   });
 
-  it('stops delivering after unsubscribe', () => {
-    const hub = createProgressHub();
-    hub.create('u3');
+  it('stops delivering after unsubscribe', async () => {
+    const hub = createProgressHub(redis);
+    await hub.create('u3');
     const seen: UploadProgressEvent[] = [];
-    const off = hub.subscribe('u3', (e) => seen.push(e));
-    hub.publish('u3', { type: 'progress', pct: 1 });
+    const off = await hub.subscribe('u3', (e) => seen.push(e));
+    await hub.publish('u3', { type: 'progress', pct: 1 });
+    await tick();
     off();
-    hub.publish('u3', { type: 'progress', pct: 2 });
+    await hub.publish('u3', { type: 'progress', pct: 2 });
+    await tick();
     expect(seen).toEqual([{ type: 'progress', pct: 1 }]);
   });
 
-  it('reports has()/isDone() and treats error as terminal', () => {
-    const hub = createProgressHub();
-    expect(hub.has('nope')).toBe(false);
-    hub.create('u4');
-    expect(hub.has('u4')).toBe(true);
-    expect(hub.isDone('u4')).toBe(false);
-    expect(hub.isDone('missing')).toBe(false);
-    hub.publish('u4', { type: 'error', message: 'boom' });
-    expect(hub.isDone('u4')).toBe(true);
+  it('reports has()/isDone() and treats error as terminal', async () => {
+    const hub = createProgressHub(redis);
+    expect(await hub.has('nope')).toBe(false);
+    await hub.create('u4');
+    expect(await hub.has('u4')).toBe(true);
+    expect(await hub.isDone('u4')).toBe(false);
+    expect(await hub.isDone('missing')).toBe(false);
+    await hub.publish('u4', { type: 'error', message: 'boom' });
+    expect(await hub.isDone('u4')).toBe(true);
   });
 
-  it('evicts a finished upload after the retain window', () => {
-    vi.useFakeTimers();
-    const hub = createProgressHub({ retainMs: 1000 });
-    hub.create('u5');
-    hub.publish('u5', { type: 'done', image });
-    expect(hub.has('u5')).toBe(true);
-    vi.advanceTimersByTime(1001);
-    expect(hub.has('u5')).toBe(false);
+  it('delivers across separate hub instances (different pods, shared Redis)', async () => {
+    // No in-process state is shared between the two hubs — state lives in Redis,
+    // so an upload published by one pod is observable by an SSE stream on another.
+    const publisherPod = createProgressHub(redis);
+    const subscriberPod = createProgressHub(redis);
+
+    await publisherPod.create('cross');
+    const seen: UploadProgressEvent[] = [];
+    const off = await subscriberPod.subscribe('cross', (e) => seen.push(e));
+
+    await publisherPod.publish('cross', { type: 'progress', pct: 50 });
+    await publisherPod.publish('cross', { type: 'done', image });
+    await tick();
+
+    expect(seen).toEqual([
+      { type: 'progress', pct: 50 },
+      { type: 'done', image },
+    ]);
+    off();
   });
 });

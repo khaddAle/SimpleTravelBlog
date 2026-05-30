@@ -60,7 +60,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     config: deps.config,
     hooks,
     storage: deps.storage ?? createStorage(deps.config.s3),
-    progress: deps.progress ?? createProgressHub(),
+    progress: deps.progress ?? createProgressHub(deps.redis),
   };
 
   registerRobots(app);
