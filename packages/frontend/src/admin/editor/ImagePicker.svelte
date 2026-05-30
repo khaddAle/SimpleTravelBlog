@@ -22,8 +22,20 @@
   let sort = $state<'newest' | 'oldest' | 'filename'>('newest');
   let orphansOnly = $state(false);
   let selected = $state<string[]>([]);
-  let uploadId = $state<string | null>(null);
-  let uploadError = $state('');
+
+  /** One in-flight or finished upload. `uploadId` is null until the POST returns. */
+  interface UploadJob {
+    key: string;
+    filename: string;
+    uploadId: string | null;
+    error: string | null;
+  }
+  let jobs = $state<UploadJob[]>([]);
+
+  // Accepted upload types — the real pipeline (sharp + libheif) handles these.
+  const ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,image/heif';
+  // Cap simultaneous uploads so a large multi-select doesn't saturate the link.
+  const MAX_CONCURRENT_UPLOADS = 3;
 
   const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
 
@@ -62,23 +74,40 @@
     page = 1;
   }
 
+  function patchJob(key: string, patch: Partial<UploadJob>): void {
+    jobs = jobs.map((job) => (job.key === key ? { ...job, ...patch } : job));
+  }
+
   async function onFileChange(event: Event): Promise<void> {
     const input = event.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    uploadError = '';
-    try {
-      const accepted = await api.uploadImage(file);
-      uploadId = accepted.uploadId;
-    } catch (err) {
-      uploadError = err instanceof Error ? err.message : 'Upload fehlgeschlagen';
-    } finally {
-      input.value = '';
+    const files = Array.from(input.files ?? []);
+    input.value = '';
+    if (files.length === 0) return;
+
+    // Fan out one upload per file, but never more than MAX_CONCURRENT_UPLOADS
+    // POSTs in flight: a small pool of workers drains a shared queue.
+    const queue = [...files];
+    const workerCount = Math.min(MAX_CONCURRENT_UPLOADS, queue.length);
+    const workers = Array.from({ length: workerCount }, () => uploadWorker(queue));
+    await Promise.all(workers);
+  }
+
+  async function uploadWorker(queue: File[]): Promise<void> {
+    for (let file = queue.shift(); file; file = queue.shift()) {
+      const key = crypto.randomUUID();
+      jobs = [...jobs, { key, filename: file.name, uploadId: null, error: null }];
+      try {
+        const accepted = await api.uploadImage(file);
+        patchJob(key, { uploadId: accepted.uploadId });
+      } catch (err) {
+        patchJob(key, {
+          error: err instanceof Error ? err.message : 'Upload fehlgeschlagen',
+        });
+      }
     }
   }
 
   function onUploadDone(image: ImageDto): void {
-    uploadId = null;
     // Surface the freshly uploaded image and pre-select it.
     selected = mode === 'single' ? [image.id] : [...selected, image.id];
     page = 1;
@@ -114,20 +143,29 @@
   <div class="upload">
     <label>
       Hochladen
-      <input type="file" accept="image/*" onchange={onFileChange} />
+      <input type="file" accept={ACCEPT} multiple onchange={onFileChange} />
     </label>
-    {#if uploadId}
-      <UploadProgress
-        {uploadId}
-        onDone={onUploadDone}
-        onError={(m) => (uploadError = m)}
-        {eventSourceFactory}
-      />
-    {/if}
-    {#if uploadError}
-      <span class="err" role="alert">{uploadError}</span>
-    {/if}
   </div>
+  {#if jobs.length > 0}
+    <ul class="uploads">
+      {#each jobs as job (job.key)}
+        <li>
+          {#if job.error}
+            <span class="err" role="alert">{job.filename}: {job.error}</span>
+          {:else if job.uploadId}
+            <UploadProgress
+              uploadId={job.uploadId}
+              onDone={onUploadDone}
+              onError={(m) => patchJob(job.key, { error: m })}
+              {eventSourceFactory}
+            />
+          {:else}
+            <span class="pending">{job.filename} – wird vorbereitet…</span>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  {/if}
 
   {#if images.length === 0}
     <p class="empty">Keine Bilder gefunden.</p>
@@ -210,6 +248,18 @@
     display: block;
   }
   .count {
+    font-size: 0.85rem;
+    color: #718096;
+  }
+  .uploads {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .pending {
     font-size: 0.85rem;
     color: #718096;
   }
