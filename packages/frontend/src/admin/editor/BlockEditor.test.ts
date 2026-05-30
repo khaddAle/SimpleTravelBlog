@@ -139,4 +139,9 @@ describe('BlockEditor', () => {
     setup([{ type: 'gallery', imageIds: ['a', 'b', 'c'] }]);
     expect(screen.getByText('3 Bilder')).toBeInTheDocument();
   });
+
+  it('renders a thumbnail per image in a gallery block', () => {
+    const { container } = setup([{ type: 'gallery', imageIds: ['a', 'b', 'c'] }]);
+    expect(container.querySelectorAll('.gallery-thumbs img')).toHaveLength(3);
+  });
 });

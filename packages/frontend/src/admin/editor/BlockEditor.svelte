@@ -163,6 +163,11 @@
           />
         {:else if entry.block.type === 'gallery'}
           <p class="gallery-summary">{entry.block.imageIds.length} Bilder</p>
+          <div class="gallery-thumbs">
+            {#each entry.block.imageIds as id (id)}
+              <img src={imageUrl(id, 'thumb')} alt="" />
+            {/each}
+          </div>
         {/if}
       </li>
     {/each}
@@ -226,6 +231,18 @@
     max-height: 80px;
     border-radius: 4px;
     margin-bottom: 0.4rem;
+  }
+  .gallery-thumbs {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    gap: 0.3rem;
+    margin-top: 0.3rem;
+  }
+  .gallery-thumbs img {
+    width: 100%;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 4px;
   }
   .palette {
     margin-top: 1rem;
