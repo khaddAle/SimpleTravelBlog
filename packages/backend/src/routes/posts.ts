@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { Types } from 'mongoose';
+import { ZodError } from 'zod';
 import { createPostRequestSchema, updatePostRequestSchema } from '@stb/shared';
 import { Post } from '../db/models/Post.js';
 import { generateUniqueShortId } from '../lib/shortId.js';
@@ -12,6 +13,15 @@ import type { RouteContext } from './context.js';
  * the CSRF header. Trips are referenced by their public shortId at the API
  * boundary and resolved to ObjectIds internally.
  */
+/**
+ * Build a 400 message that names the offending top-level fields, so clients see
+ * "invalid post payload: country, placeName" instead of an opaque blanket error.
+ */
+function invalidPayloadMessage(error: ZodError): string {
+  const fields = [...new Set(error.issues.map((i) => String(i.path[0] ?? '?')))];
+  return `invalid post payload: ${fields.join(', ')}`;
+}
+
 export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): void {
   const { hooks } = ctx;
   const auth = { preHandler: hooks.requireAuth };
@@ -49,7 +59,7 @@ export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): voi
 
   app.post('/api/posts', mutate, async (req, reply) => {
     const parsed = createPostRequestSchema.safeParse(req.body);
-    if (!parsed.success) throw app.httpErrors.badRequest('invalid post payload');
+    if (!parsed.success) throw app.httpErrors.badRequest(invalidPayloadMessage(parsed.error));
     const data = parsed.data;
 
     let tripObjectId: string | undefined;
@@ -89,7 +99,7 @@ export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): voi
     mutate,
     async (req) => {
       const parsed = updatePostRequestSchema.safeParse(req.body);
-      if (!parsed.success) throw app.httpErrors.badRequest('invalid post payload');
+      if (!parsed.success) throw app.httpErrors.badRequest(invalidPayloadMessage(parsed.error));
       const data = parsed.data;
 
       const post = await Post.findOne({ shortId: req.params.shortId });

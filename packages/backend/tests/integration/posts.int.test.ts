@@ -90,6 +90,13 @@ describe('posts + trips integration', () => {
     expect(res.status).toBe(400);
   });
 
+  it('names the offending fields when a create payload is invalid', async () => {
+    const res = await createPost(postPayload({ country: '', placeName: '' }));
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain('country');
+    expect(res.body.message).toContain('placeName');
+  });
+
   it('publishes via PATCH and stamps publishedAt once', async () => {
     const created = await createPost(postPayload());
     const id = created.body.post.id;
