@@ -6,16 +6,15 @@ the plan and the per-phase memory note.
 
 ## Open
 
-- [ ] **Create a "loki-query" skill** so Claude can read cluster logs directly
-  (app + MinIO + platform pods) when diagnosing deploy/runtime issues, instead of
-  round-tripping `kubectl logs` through the user. Constraints on this box: NO
-  `kubectl`/`jq` — must use Loki's HTTP API via `curl` + `grep`/`sed` (LogQL
-  `query_range` endpoint). Skill should cover: the Loki base URL/how it's reached
-  from this workstation (port-forward? ingress? tunnel? — TBD with user), auth if
-  any, a couple of canned LogQL queries (e.g. `{namespace="travelblog-dev",
-  app="travel-blog"}`, `{namespace="platform-storage"}`), and time-range handling.
-  Decide endpoint exposure with the user before writing it. Would have made the
-  S3 `Access Denied` diagnosis a direct log read.
+- [X] **"loki-query" skill — DONE as a generic `cluster-debug` user-level skill.**
+  Created `C:\Users\Dev\.claude\skills\cluster-debug\SKILL.md` (user level, NOT in
+  this repo — works across every workload on the home-lan k3s cluster). Covers Loki
+  (`http://192.168.178.210/loki/api/v1/`) + Prometheus
+  (`http://192.168.178.210/prometheus/api/v1/`) over the gateway, no-jq/no-kubectl
+  curl+grep parsing, Git-Bash ns-timestamp helpers, runtime namespace/label
+  discovery, LogQL + PromQL patterns, the shared `platform-*` namespace cheat-sheet,
+  and a hypothesis-driven workflow. Kept generic at the user's request; adapted from
+  the Optrix `debug-optrix` skill (Optrix-specific debug endpoints/topology dropped).
 
 - [ ] **Improve user-create error message (UX polish, low priority — ok to leave as is for now).**
   The "Nutzer" form shows a generic *"Anlegen fehlgeschlagen."* on any failure.
