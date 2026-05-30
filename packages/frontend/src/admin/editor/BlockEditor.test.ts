@@ -144,4 +144,13 @@ describe('BlockEditor', () => {
     const { container } = setup([{ type: 'gallery', imageIds: ['a', 'b', 'c'] }]);
     expect(container.querySelectorAll('.gallery-thumbs img')).toHaveLength(3);
   });
+
+  it('edits a gallery caption', async () => {
+    const user = userEvent.setup();
+    const { onChange } = setup([{ type: 'gallery', imageIds: ['a', 'b'] }]);
+    await user.type(screen.getByLabelText('Galerie-Bildunterschrift'), 'Tour');
+    expect(onChange).toHaveBeenLastCalledWith([
+      { type: 'gallery', imageIds: ['a', 'b'], caption: 'Tour' },
+    ]);
+  });
 });

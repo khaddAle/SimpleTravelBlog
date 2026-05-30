@@ -90,6 +90,13 @@
     emit();
   }
 
+  function setGalleryCaption(index: number, caption: string): void {
+    const entry = entries[index]!;
+    if (entry.block.type !== 'gallery') return;
+    entry.block = { ...entry.block, caption: caption || undefined };
+    emit();
+  }
+
   const TYPE_LABELS: Record<BlockType, string> = {
     title: 'Titel',
     subtitle: 'Untertitel',
@@ -168,6 +175,13 @@
               <img src={imageUrl(id, 'thumb')} alt="" />
             {/each}
           </div>
+          <input
+            type="text"
+            value={entry.block.caption ?? ''}
+            aria-label="Galerie-Bildunterschrift"
+            placeholder="Bildunterschrift (optional)"
+            oninput={(e) => setGalleryCaption(index, e.currentTarget.value)}
+          />
         {/if}
       </li>
     {/each}

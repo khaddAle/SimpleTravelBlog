@@ -12,6 +12,9 @@
       </a>
     {/each}
   </div>
+  {#if block.caption}
+    <figcaption>{block.caption}</figcaption>
+  {/if}
 </figure>
 
 <style>
@@ -28,5 +31,11 @@
     height: 120px;
     object-fit: cover;
     border-radius: 4px;
+  }
+  figcaption {
+    margin-top: 0.4rem;
+    font-size: 0.9rem;
+    color: #718096;
+    text-align: center;
   }
 </style>

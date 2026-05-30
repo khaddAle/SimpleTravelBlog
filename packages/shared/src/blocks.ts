@@ -31,6 +31,7 @@ export const imageBlockSchema = z.object({
 export const galleryBlockSchema = z.object({
   type: z.literal('gallery'),
   imageIds: z.array(z.string().min(1)).min(1).max(24),
+  caption: z.string().max(300).optional(),
 });
 
 export const quoteBlockSchema = z.object({
