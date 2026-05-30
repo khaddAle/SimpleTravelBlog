@@ -24,6 +24,10 @@ import {
  *   npm run import-wp -- --wp-url=https://old.example.com \
  *     --api-url=http://localhost:4000 --username=admin --password=… \
  *     --default-country=DE --default-place=Berlin
+ *
+ * Tuning flags: `--throttle-ms=N` (gap between uploads, default 250) eases load
+ * on the Pi; `--warn-image-bytes=N` sets the size at which the report flags an
+ * image (so you can raise the server's MAX_UPLOAD_BYTES before a live run).
  */
 
 interface Args {
@@ -36,8 +40,13 @@ interface Args {
   dryRun: boolean;
   out: string;
   limit: number | undefined;
+  /** Delay between sequential image uploads, ms — eases load on the Pi. */
+  throttleMs: number;
   map: MapOptions;
 }
+
+const sleep = (ms: number): Promise<void> =>
+  ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 
 function parseArgs(argv: string[]): Args {
   const flags = new Map<string, string>();
@@ -57,13 +66,16 @@ function parseArgs(argv: string[]): Args {
   const place = flags.get('default-place');
   const lat = num('default-lat');
   const lng = num('default-lng');
+  const warnBytes = num('warn-image-bytes');
   if (country !== undefined) map.defaultCountry = country;
   if (place !== undefined) map.defaultPlaceName = place;
   if (lat !== undefined) map.defaultLat = lat;
   if (lng !== undefined) map.defaultLng = lng;
+  if (warnBytes !== undefined && Number.isFinite(warnBytes)) map.warnImageBytes = warnBytes;
   if (bare.has('as-draft')) map.asDraft = true;
 
   const limit = num('limit');
+  const throttle = num('throttle-ms');
 
   return {
     wpUrl: flags.get('wp-url'),
@@ -75,6 +87,7 @@ function parseArgs(argv: string[]): Args {
     dryRun: bare.has('dry-run'),
     out: flags.get('out') ?? 'migration-report.json',
     limit: limit !== undefined && Number.isFinite(limit) ? limit : undefined,
+    throttleMs: throttle !== undefined && Number.isFinite(throttle) ? Math.max(0, throttle) : 250,
     map,
   };
 }
@@ -226,7 +239,12 @@ async function runLive(args: Args, plan: ImportPlan): Promise<RunResult> {
   const session = await login(args.apiUrl, args.username, args.password);
 
   const uploaded: Record<string, string> = {};
+  let first = true;
   for (const src of plan.imageSources) {
+    // Sequential uploads with a configurable gap so the Pi's background
+    // transcode (no server-side concurrency cap) is not overwhelmed.
+    if (!first) await sleep(args.throttleMs);
+    first = false;
     process.stdout.write(`  ↑ ${src}\n`);
     uploaded[src] = await uploadImage(args.apiUrl, session, src);
   }
@@ -236,7 +254,15 @@ async function runLive(args: Args, plan: ImportPlan): Promise<RunResult> {
   for (const m of plan.mapped) {
     const { blocks, losses } = finalizeBlocks(m.request.blocks, (src) => uploaded[src]);
     for (const l of losses) finalizeLosses.push({ slug: m.slug, src: l.detail });
-    const id = await createPost(args.apiUrl, session, { ...m.request, blocks });
+    // The WP featured image becomes the post's cover; record a loss if its
+    // re-upload did not produce an id.
+    const coverImageId = m.coverSrc ? uploaded[m.coverSrc] : undefined;
+    if (m.coverSrc && !coverImageId) finalizeLosses.push({ slug: m.slug, src: m.coverSrc });
+    const id = await createPost(args.apiUrl, session, {
+      ...m.request,
+      blocks,
+      ...(coverImageId ? { coverImageId } : {}),
+    });
     created.push({ slug: m.slug, id });
     process.stdout.write(`  + ${m.slug} → ${id}\n`);
   }
@@ -258,6 +284,7 @@ async function main(): Promise<void> {
     counts: plan.counts,
     losses: plan.losses,
     skipped: plan.skipped,
+    largeImages: plan.largeImages,
     posts: plan.mapped.map((m) => ({
       sourceId: m.sourceId,
       slug: m.slug,
@@ -265,6 +292,7 @@ async function main(): Promise<void> {
       status: m.request.status,
       publishedAt: m.request.publishedAt,
       title: m.request.title,
+      coverSrc: m.coverSrc,
     })),
   };
 

@@ -20,7 +20,7 @@
     "test:watch": "vitest",
     "e2e:server": "tsx packages/backend/tests/e2e-harness.ts",
     "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
-    "import-wp": "npm run import-wp -w @stb/backend"
+    "import-wp": "npm run import-wp -w @stb/backend --"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

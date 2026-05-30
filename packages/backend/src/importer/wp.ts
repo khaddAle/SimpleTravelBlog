@@ -35,7 +35,13 @@ export const wpMediaSchema = z.object({
   alt_text: z.string().default(''),
   caption: renderedSchema.optional(),
   media_details: z
-    .object({ width: z.number().optional(), height: z.number().optional() })
+    .object({
+      width: z.number().optional(),
+      height: z.number().optional(),
+      // Present on many WP installs; the only direct signal of the byte size we
+      // would have to push through the upload limit. Absent → fall back to pixels.
+      filesize: z.number().optional(),
+    })
     .optional(),
 });
 export type WpMedia = z.infer<typeof wpMediaSchema>;
@@ -105,17 +111,40 @@ export function stripHtml(html: string): string {
 
 // --- HTML → blocks ---------------------------------------------------------
 
-export function htmlToBlocks(html: string): { blocks: ImportBlock[]; losses: LocalLoss[] } {
+/**
+ * Strip WordPress's `-<width>x<height>` resize suffix from an upload URL so we
+ * fetch the full-size original (e.g. `…/weg-1024x683.jpg` → `…/weg.jpg`). Only a
+ * dimension token immediately before the file extension is removed.
+ */
+export function stripWpSizeSuffix(src: string): string {
+  return src.replace(/-\d+x\d+(?=\.[A-Za-z0-9]+$)/, '');
+}
+
+/** Read WordPress's `wp-image-<id>` class token, if present, as a media id. */
+function wpImageIdFromClass(cls: string | undefined): number | undefined {
+  const m = cls?.match(/(?:^|\s)wp-image-(\d+)(?:\s|$)/);
+  return m ? Number(m[1]) : undefined;
+}
+
+/** Resolve a content `<img src>` to its original. Identity when no resolver. */
+export type SrcResolver = (src: string, wpImageId?: number) => string;
+
+export function htmlToBlocks(
+  html: string,
+  resolveSrc?: SrcResolver,
+): { blocks: ImportBlock[]; losses: LocalLoss[] } {
   const $ = cheerio.load(html, null, false);
   const blocks: ImportBlock[] = [];
   const losses: LocalLoss[] = [];
 
   const pushImage = (img: cheerio.Cheerio<never>, captionOverride?: string): void => {
-    const src = img.attr('src')?.trim();
-    if (!src) {
+    const rawSrc = img.attr('src')?.trim();
+    if (!rawSrc) {
       losses.push({ kind: 'unsupported_element', detail: 'img-without-src' });
       return;
     }
+    const wpImageId = wpImageIdFromClass(img.attr('class'));
+    const src = resolveSrc ? resolveSrc(rawSrc, wpImageId) : rawSrc;
     const caption = normalize(captionOverride ?? img.attr('alt') ?? '');
     blocks.push({
       type: 'image',
@@ -196,7 +225,13 @@ export interface MapOptions {
   fallbackTitle?: string;
   /** Import as drafts instead of publishing on import (escape hatch). */
   asDraft?: boolean;
+  /** Byte size at/above which a referenced image is flagged in the report. */
+  warnImageBytes?: number;
 }
+
+/** Default thresholds for flagging an image as worryingly large in the report. */
+export const WARN_IMAGE_BYTES_DEFAULT = 15 * 1024 * 1024;
+export const WARN_IMAGE_PIXELS_DEFAULT = 24_000_000;
 
 export interface MappedPostRequest {
   title: string;
@@ -217,6 +252,11 @@ export interface MappedPost {
   slug: string;
   /** WP status of the source post (only `publish` posts are ever mapped). */
   originalStatus: string;
+  /**
+   * Pending source URL of the post's cover image (WP `featured_media`), resolved
+   * to a `coverImageId` after re-upload. Undefined when the post has no cover.
+   */
+  coverSrc?: string;
   request: MappedPostRequest;
   losses: LocalLoss[];
 }
@@ -230,25 +270,30 @@ export function mapPost(post: WpPost, media: MediaIndex, opts: MapOptions = {}):
   const losses: LocalLoss[] = [];
   const blocks: ImportBlock[] = [];
 
+  // WP's featured image becomes the post's first-class cover (coverImageId),
+  // not a leading content block — resolved to an id after re-upload.
+  let coverSrc: string | undefined;
   if (post.featured_media) {
     const cover = media.get(post.featured_media);
     if (cover) {
-      const caption = normalize(cover.alt_text || stripHtml(cover.caption?.rendered ?? ''));
-      blocks.push({
-        type: 'image',
-        src: cover.source_url,
-        ...(caption ? { caption: clamp(caption, MAX.caption) } : {}),
-      });
+      coverSrc = cover.source_url;
     } else {
       losses.push({ kind: 'unresolved_image', detail: `featured_media:${post.featured_media}` });
     }
   }
 
-  const content = htmlToBlocks(post.content.rendered);
+  // Resolve each content image to its full-size original: prefer the WP media
+  // attachment (via the `wp-image-<id>` class), else strip the resize suffix.
+  const resolveSrc: SrcResolver = (src, wpImageId) => {
+    const original = wpImageId !== undefined ? media.get(wpImageId)?.source_url : undefined;
+    return original ?? stripWpSizeSuffix(src);
+  };
+
+  const content = htmlToBlocks(post.content.rendered, resolveSrc);
   blocks.push(...content.blocks);
   losses.push(...content.losses);
 
-  if (blocks.length === 0) losses.push({ kind: 'empty_post', detail: post.slug });
+  if (blocks.length === 0 && !coverSrc) losses.push({ kind: 'empty_post', detail: post.slug });
 
   const title = clamp(stripHtml(post.title.rendered) || (opts.fallbackTitle ?? 'Ohne Titel'), MAX.title);
 
@@ -266,6 +311,7 @@ export function mapPost(post: WpPost, media: MediaIndex, opts: MapOptions = {}):
     sourceId: post.id,
     slug: post.slug,
     originalStatus: post.status,
+    ...(coverSrc ? { coverSrc } : {}),
     request: {
       title,
       postDate,
@@ -317,11 +363,20 @@ export interface SkippedPost {
   status: string;
 }
 
+/** A referenced image flagged as large enough to warrant attention pre-import. */
+export interface LargeImage {
+  src: string;
+  width?: number;
+  height?: number;
+  filesize?: number;
+}
+
 export interface ImportPlan {
   mapped: MappedPost[];
   imageSources: string[];
   losses: ImportLoss[];
   skipped: SkippedPost[];
+  largeImages: LargeImage[];
   counts: { posts: number; blocks: number; images: number; skipped: number };
 }
 
@@ -354,9 +409,13 @@ export function planImport(
 
   const seen = new Set<string>();
   for (const m of mapped) {
+    // Cover first (it used to be the leading block), then the content images.
+    if (m.coverSrc) seen.add(m.coverSrc);
     for (const src of collectImageSrcs(m.request.blocks)) seen.add(src);
   }
   const imageSources = [...seen];
+
+  const largeImages = flagLargeImages(imageSources, media, opts.warnImageBytes);
 
   const blocks = mapped.reduce((n, m) => n + m.request.blocks.length, 0);
 
@@ -365,8 +424,44 @@ export function planImport(
     imageSources,
     losses,
     skipped,
+    largeImages,
     counts: { posts: mapped.length, blocks, images: imageSources.length, skipped: skipped.length },
   };
+}
+
+/**
+ * Flag referenced images likely to strain the upload limit: by byte size when
+ * WP reports `filesize` (default threshold {@link WARN_IMAGE_BYTES_DEFAULT}), or
+ * by pixel count as a fallback ({@link WARN_IMAGE_PIXELS_DEFAULT}). Lets a
+ * dry-run surface whether `MAX_UPLOAD_BYTES` needs raising before the live run.
+ */
+export function flagLargeImages(
+  imageSources: string[],
+  media: WpMedia[],
+  warnBytes: number = WARN_IMAGE_BYTES_DEFAULT,
+): LargeImage[] {
+  const bySrc = new Map(media.map((m) => [m.source_url, m]));
+  const large: LargeImage[] = [];
+  for (const src of imageSources) {
+    const details = bySrc.get(src)?.media_details;
+    if (!details) continue;
+    const { width, height, filesize } = details;
+    const tooManyBytes = filesize !== undefined && filesize >= warnBytes;
+    const tooManyPixels =
+      filesize === undefined &&
+      width !== undefined &&
+      height !== undefined &&
+      width * height >= WARN_IMAGE_PIXELS_DEFAULT;
+    if (tooManyBytes || tooManyPixels) {
+      large.push({
+        src,
+        ...(width !== undefined ? { width } : {}),
+        ...(height !== undefined ? { height } : {}),
+        ...(filesize !== undefined ? { filesize } : {}),
+      });
+    }
+  }
+  return large;
 }
 
 /** A German, human-readable summary of a plan for the CLI's dry-run output. */
@@ -379,6 +474,15 @@ export function renderReport(plan: ImportPlan): string {
   ];
   if (plan.skipped.length > 0) {
     lines.push(`  Übersprungen (nicht veröffentlicht): ${plan.skipped.length}`);
+  }
+  if (plan.largeImages.length > 0) {
+    lines.push(`  Große Bilder (Upload-Limit prüfen): ${plan.largeImages.length}`);
+    for (const img of plan.largeImages) {
+      const mb = img.filesize !== undefined ? `${(img.filesize / 1024 / 1024).toFixed(1)} MB` : undefined;
+      const px = img.width !== undefined && img.height !== undefined ? `${img.width}×${img.height}` : undefined;
+      const hint = [mb, px].filter(Boolean).join(', ');
+      lines.push(`    - ${img.src}${hint ? ` (${hint})` : ''}`);
+    }
   }
   if (plan.losses.length === 0) {
     lines.push('  Verluste/Hinweise: keine');

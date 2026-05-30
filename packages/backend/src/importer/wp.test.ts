@@ -8,6 +8,7 @@ import {
   buildMediaIndex,
   htmlToBlocks,
   collectImageSrcs,
+  stripWpSizeSuffix,
   mapPost,
   finalizeBlocks,
   planImport,
@@ -141,6 +142,35 @@ describe('htmlToBlocks — per-element mapping', () => {
     expect(blocks[0]).toMatchObject({ type: 'paragraph' });
     if (blocks[0].type === 'paragraph') expect(blocks[0].text).toHaveLength(10_000);
   });
+
+  it('applies the original-src resolver to image blocks, passing the wp-image id', () => {
+    const { blocks } = htmlToBlocks(
+      '<p><img src="https://x/a-300x200.jpg" class="size-large wp-image-42"/></p>',
+      (src, wpImageId) => `resolved:${wpImageId ?? '?'}:${src}`,
+    );
+    expect(blocks).toEqual([{ type: 'image', src: 'resolved:42:https://x/a-300x200.jpg' }]);
+  });
+
+  it('passes an undefined wp-image id to the resolver when the class is absent', () => {
+    const { blocks } = htmlToBlocks('<img src="https://x/b.jpg"/>', (src, wpImageId) =>
+      wpImageId === undefined ? `${src}#orig` : src,
+    );
+    expect(blocks).toEqual([{ type: 'image', src: 'https://x/b.jpg#orig' }]);
+  });
+});
+
+describe('stripWpSizeSuffix', () => {
+  it('removes a -WxH suffix before the extension', () => {
+    expect(stripWpSizeSuffix('https://x/a-1024x683.jpg')).toBe('https://x/a.jpg');
+  });
+
+  it('leaves a URL without a size suffix unchanged', () => {
+    expect(stripWpSizeSuffix('https://x/a.jpg')).toBe('https://x/a.jpg');
+  });
+
+  it('only strips a trailing dimension token directly before the extension', () => {
+    expect(stripWpSizeSuffix('https://x/2020x-trip.jpg')).toBe('https://x/2020x-trip.jpg');
+  });
 });
 
 describe('collectImageSrcs', () => {
@@ -166,13 +196,51 @@ describe('mapPost', () => {
     expect(m.request.postDate).toBe('2019-07-14T07:30:00.000Z');
   });
 
-  it('prepends the featured image as a cover block', () => {
+  it('maps the featured image to coverSrc, not a content block', () => {
     const m = mapPost(byId(101), index);
-    expect(m.request.blocks[0]).toEqual({
+    expect(m.coverSrc).toBe(
+      'https://old.example.com/wp-content/uploads/2019/07/zugspitze.jpg',
+    );
+    // The first block is now the post's own content (its leading <h2>), and the
+    // cover image no longer appears among the content blocks.
+    expect(m.request.blocks[0]).toEqual({ type: 'subtitle', text: 'Der Aufstieg' });
+    expect(
+      m.request.blocks.some((b) => b.type === 'image' && b.src.includes('zugspitze')),
+    ).toBe(false);
+  });
+
+  it('leaves coverSrc undefined when the post has no featured media', () => {
+    const m = mapPost({ ...byId(101), featured_media: 0 }, index);
+    expect(m.coverSrc).toBeUndefined();
+  });
+
+  it('resolves a content image variant URL to its media original via the wp-image class', () => {
+    const post: WpPost = {
+      ...byId(101),
+      featured_media: 0,
+      content: {
+        rendered:
+          '<p><img src="https://old.example.com/wp-content/uploads/2019/07/weg-1024x683.jpg" class="wp-image-202"/></p>',
+      },
+    };
+    const m = mapPost(post, index);
+    const img = m.request.blocks.find((b) => b.type === 'image');
+    // media 202's source_url is the un-resized original.
+    expect(img).toEqual({
       type: 'image',
-      src: 'https://old.example.com/wp-content/uploads/2019/07/zugspitze.jpg',
-      caption: 'Gipfelkreuz im Morgenlicht',
+      src: 'https://old.example.com/wp-content/uploads/2019/07/weg.jpg',
     });
+  });
+
+  it('falls back to stripping the WP size suffix when the wp-image id is unknown', () => {
+    const post: WpPost = {
+      ...byId(101),
+      featured_media: 0,
+      content: { rendered: '<p><img src="https://x/foo-1600x900.jpg"/></p>' },
+    };
+    const m = mapPost(post, index);
+    const img = m.request.blocks.find((b) => b.type === 'image');
+    expect(img).toEqual({ type: 'image', src: 'https://x/foo.jpg' });
   });
 
   it('records a location_missing loss and applies metadata defaults', () => {
@@ -198,6 +266,13 @@ describe('mapPost', () => {
     const m = mapPost(byId(103), index);
     expect(m.request.blocks).toEqual([]);
     expect(m.losses).toContainEqual({ kind: 'empty_post', detail: 'leerer-entwurf' });
+  });
+
+  it('does not flag empty_post when a post has a cover but no body blocks', () => {
+    const m = mapPost({ ...byId(101), content: { rendered: '<p>&nbsp;</p>' } }, index);
+    expect(m.request.blocks).toEqual([]);
+    expect(m.coverSrc).toBeTruthy();
+    expect(m.losses.some((l) => l.kind === 'empty_post')).toBe(false);
   });
 
   it('reports a missing featured media reference as a loss', () => {
@@ -323,6 +398,57 @@ describe('planImport', () => {
     expect(plan.mapped[0]?.request.status).toBe('draft');
     expect(plan.mapped[0]?.request.publishedAt).toBeUndefined();
   });
+
+  describe('large-image flagging', () => {
+    const bigMedia = parseWpMedia([
+      {
+        id: 1,
+        source_url: 'https://x/huge.jpg',
+        mime_type: 'image/jpeg',
+        media_details: { width: 6000, height: 4000, filesize: 25 * 1024 * 1024 },
+      },
+      {
+        id: 2,
+        source_url: 'https://x/ok.jpg',
+        mime_type: 'image/jpeg',
+        media_details: { width: 1600, height: 1067, filesize: 800 * 1024 },
+      },
+      {
+        id: 3,
+        source_url: 'https://x/no-size.jpg',
+        mime_type: 'image/jpeg',
+        media_details: { width: 8000, height: 6000 },
+      },
+    ]);
+
+    it('flags referenced images whose filesize exceeds the byte warn threshold', () => {
+      const post = makeWpPost(1, 'a', 'publish', '<p><img src="https://x/huge.jpg"/></p>');
+      const plan = planImport([post], bigMedia, { warnImageBytes: 15 * 1024 * 1024 });
+      expect(plan.largeImages).toEqual([
+        { src: 'https://x/huge.jpg', width: 6000, height: 4000, filesize: 25 * 1024 * 1024 },
+      ]);
+    });
+
+    it('does not flag referenced images comfortably under the threshold', () => {
+      const post = makeWpPost(1, 'a', 'publish', '<p><img src="https://x/ok.jpg"/></p>');
+      const plan = planImport([post], bigMedia, { warnImageBytes: 15 * 1024 * 1024 });
+      expect(plan.largeImages).toEqual([]);
+    });
+
+    it('flags by pixel count when filesize is unavailable', () => {
+      const post = makeWpPost(1, 'a', 'publish', '<p><img src="https://x/no-size.jpg"/></p>');
+      const plan = planImport([post], bigMedia, { warnImageBytes: 15 * 1024 * 1024 });
+      expect(plan.largeImages).toEqual([
+        { src: 'https://x/no-size.jpg', width: 8000, height: 6000 },
+      ]);
+    });
+
+    it('ignores large media that no published post references', () => {
+      const post = makeWpPost(1, 'a', 'publish', '<p>kein Bild</p>');
+      const plan = planImport([post], bigMedia, { warnImageBytes: 15 * 1024 * 1024 });
+      expect(plan.largeImages).toEqual([]);
+    });
+  });
 });
 
 describe('renderReport', () => {
@@ -342,5 +468,28 @@ describe('renderReport', () => {
   it('reports "keine" when there are no losses', () => {
     const plan = planImport([], []);
     expect(renderReport(plan)).toContain('Verluste/Hinweise: keine');
+  });
+
+  it('lists large referenced images with a size hint when any are flagged', () => {
+    const media = parseWpMedia([
+      {
+        id: 1,
+        source_url: 'https://x/huge.jpg',
+        mime_type: 'image/jpeg',
+        media_details: { width: 6000, height: 4000, filesize: 25 * 1024 * 1024 },
+      },
+    ]);
+    const post: WpPost = {
+      id: 1,
+      slug: 'a',
+      status: 'publish',
+      date_gmt: '2020-01-01T00:00:00',
+      featured_media: 0,
+      title: { rendered: 'a' },
+      content: { rendered: '<p><img src="https://x/huge.jpg"/></p>' },
+    };
+    const text = renderReport(planImport([post], media, { warnImageBytes: 15 * 1024 * 1024 }));
+    expect(text).toMatch(/Große Bilder/);
+    expect(text).toContain('https://x/huge.jpg');
   });
 });
