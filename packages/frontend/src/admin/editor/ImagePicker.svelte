@@ -147,35 +147,35 @@
 
 <div class="image-picker">
   <header>
-    <h2>{mode === 'single' ? 'Bild auswählen' : 'Bilder auswählen'}</h2>
-    <button type="button" aria-label="Schließen" onclick={onCancel}>✕</button>
+    <h3>{mode === 'single' ? 'Bild auswählen' : 'Bilder auswählen'}</h3>
+    <button type="button" class="close" aria-label="Schließen" onclick={onCancel}>✕</button>
   </header>
 
-  <div class="filters">
+  <div class="toolbar">
     <input
       type="search"
+      class="search"
       placeholder="Dateiname filtern"
       aria-label="Dateiname filtern"
       bind:value={q}
       oninput={resetToFirstPage}
     />
-    <select aria-label="Sortierung" bind:value={sort} onchange={resetToFirstPage}>
+    <select class="select" aria-label="Sortierung" bind:value={sort} onchange={resetToFirstPage}>
       <option value="newest">Neueste</option>
       <option value="oldest">Älteste</option>
       <option value="filename">Dateiname</option>
     </select>
-    <label>
+    <label class="checkbox">
       <input type="checkbox" bind:checked={orphansOnly} onchange={resetToFirstPage} />
       Nur unbenutzte
     </label>
-  </div>
-
-  <div class="upload">
-    <label>
+    <span class="spacer"></span>
+    <label class="tb-btn upload-btn">
       Hochladen
-      <input type="file" accept={ACCEPT} multiple onchange={onFileChange} />
+      <input type="file" class="sr-only" accept={ACCEPT} multiple onchange={onFileChange} />
     </label>
   </div>
+
   {#if jobs.length > 0}
     <ul class="uploads">
       {#each jobs as job (job.key)}
@@ -211,7 +211,7 @@
             aria-label={image.originalFilename}
             onclick={() => toggle(image.id)}
           >
-            <img src={image.thumbUrl} alt="" />
+            <span class="mat"><span class="frame"><img src={image.thumbUrl} alt="" /></span></span>
           </button>
         </li>
       {/each}
@@ -220,16 +220,25 @@
 
   <footer>
     <div class="pager">
-      <button type="button" disabled={page <= 1} onclick={() => (page -= 1)}>Zurück</button>
-      <span>Seite {page} von {totalPages}</span>
-      <button type="button" disabled={page >= totalPages} onclick={() => (page += 1)}
-        >Weiter</button
-      >
+      <button type="button" class="tb-btn" disabled={page <= 1} onclick={() => (page -= 1)}>
+        Zurück
+      </button>
+      <span class="page-label">Seite {page} von {totalPages}</span>
+      <button type="button" class="tb-btn" disabled={page >= totalPages} onclick={() => (page += 1)}>
+        Weiter
+      </button>
     </div>
     <div class="actions">
       <span class="count" aria-live="polite">{selected.length} ausgewählt</span>
-      <button type="button" onclick={onCancel}>Abbrechen</button>
-      <button type="button" disabled={selected.length === 0} onclick={confirm}>Auswählen</button>
+      <button type="button" class="tb-btn" onclick={onCancel}>Abbrechen</button>
+      <button
+        type="button"
+        class="btn primary confirm"
+        disabled={selected.length === 0}
+        onclick={confirm}
+      >
+        Auswählen
+      </button>
     </div>
   </footer>
 </div>
@@ -238,7 +247,18 @@
   .image-picker {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 16px;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
   header,
   footer {
@@ -246,40 +266,156 @@
     justify-content: space-between;
     align-items: center;
   }
-  .filters,
-  .upload {
+  header h3 {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+    margin: 0;
+  }
+  .close {
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 7px;
+    color: var(--muted);
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .close:hover {
+    border-color: var(--accent);
+    color: var(--ink);
+  }
+  .toolbar {
     display: flex;
-    gap: 0.5rem;
+    gap: 10px;
     align-items: center;
     flex-wrap: wrap;
+  }
+  .search,
+  .select {
+    font: inherit;
+    font-size: 14px;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 9px 11px;
+    border-radius: 6px;
+    appearance: none;
+  }
+  .search {
+    flex: 1;
+    min-width: 140px;
+  }
+  .search:focus,
+  .select:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--surface);
+  }
+  .checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .spacer {
+    flex: 1;
+  }
+  .tb-btn {
+    display: inline-flex;
+    align-items: center;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 9px 14px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .tb-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+  }
+  .tb-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
   }
   .grid {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 14px;
   }
   .thumb {
+    display: block;
+    width: 100%;
     padding: 0;
-    border: 2px solid transparent;
-    border-radius: 4px;
-    cursor: pointer;
+    border: 0;
     background: none;
+    cursor: pointer;
+    border-radius: 2px;
   }
-  .thumb.selected {
-    border-color: var(--accent);
+  .thumb .mat {
+    display: block;
+    background: var(--surface);
+    padding: 8px;
+    border: 1px solid var(--matedge);
+    box-shadow: var(--shadow-frame-sm);
+    transition: box-shadow 0.12s;
+  }
+  .thumb .frame {
+    display: block;
+    border: 1px solid var(--keyline);
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    line-height: 0;
   }
   .thumb img {
     width: 100%;
-    height: 100px;
+    height: 100%;
     object-fit: cover;
     display: block;
   }
+  .thumb:focus-visible {
+    outline: none;
+  }
+  .thumb:focus-visible .mat,
+  .thumb:hover .mat {
+    box-shadow:
+      0 0 0 2px var(--accent),
+      var(--shadow-frame-sm);
+  }
+  .thumb.selected .mat {
+    box-shadow:
+      0 0 0 3px var(--accent),
+      var(--shadow-frame-sm);
+  }
+  .pager {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .page-label {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .confirm {
+    padding: 9px 16px;
+    font-size: 13px;
+  }
   .count {
-    font-size: 0.85rem;
-    color: #718096;
+    font-size: 13px;
+    color: var(--faint);
   }
   .uploads {
     list-style: none;
@@ -287,17 +423,18 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 6px;
   }
   .pending {
-    font-size: 0.85rem;
-    color: #718096;
+    font-size: 13px;
+    color: var(--muted);
   }
   .err {
-    color: #c53030;
+    color: #b4452f;
+    font-size: 13px;
   }
   .empty {
-    color: #a0aec0;
+    color: var(--faint);
     font-style: italic;
   }
 </style>

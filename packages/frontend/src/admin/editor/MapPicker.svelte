@@ -78,8 +78,14 @@
 
 <div class="map-picker">
   <form onsubmit={runSearch}>
-    <input type="search" placeholder="Ort suchen" aria-label="Ort suchen" bind:value={query} />
-    <button type="submit" disabled={searching}>Suchen</button>
+    <input
+      type="search"
+      class="search"
+      placeholder="Ort suchen"
+      aria-label="Ort suchen"
+      bind:value={query}
+    />
+    <button type="submit" class="tb-btn" disabled={searching}>Suchen</button>
   </form>
 
   {#if searchError}
@@ -96,7 +102,10 @@
     </ul>
   {/if}
 
-  <div class="map" bind:this={mapEl}></div>
+  <div class="map-frame">
+    <div class="map" bind:this={mapEl}></div>
+    <span class="map-cap">Klicken, um die Position zu setzen</span>
+  </div>
 
   {#if selectedLat !== undefined && selectedLng !== undefined}
     <p class="coords">Gewählt: {selectedLat.toFixed(5)}, {selectedLng.toFixed(5)}</p>
@@ -106,36 +115,110 @@
 </div>
 
 <style>
-  .map {
-    height: 300px;
+  form {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .search {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: 14px;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 9px 11px;
     border-radius: 6px;
-    background: #edf2f7;
+    appearance: none;
+  }
+  .search:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--surface);
+  }
+  .tb-btn {
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 9px 14px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .tb-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+  }
+  .tb-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .map-frame {
+    position: relative;
+    background: var(--surface);
+    padding: 8px;
+    border: 1px solid var(--matedge);
+    box-shadow: var(--shadow-frame-sm);
+  }
+  .map {
+    height: 240px;
+    border: 1px solid var(--keyline);
+    background: var(--panel);
+  }
+  .map-cap {
+    position: absolute;
+    left: 16px;
+    bottom: 16px;
+    z-index: 500;
+    pointer-events: none;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--faint);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    padding: 3px 7px;
   }
   .results {
     list-style: none;
-    margin: 0.25rem 0;
-    padding: 0;
-    border: 1px solid #e2e8f0;
-    border-radius: 4px;
+    margin: 0 0 10px;
+    padding: 4px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
   }
   .results button {
     display: block;
     width: 100%;
     text-align: left;
-    padding: 0.4rem 0.6rem;
+    padding: 9px 10px;
     background: none;
     border: none;
+    border-radius: 5px;
+    font: inherit;
+    font-size: 14px;
+    color: var(--ink);
     cursor: pointer;
   }
+  .results button:hover {
+    background: var(--panel);
+  }
   .coords {
-    font-size: 0.9rem;
-    color: #4a5568;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    color: var(--muted);
+    margin: 10px 0 0;
   }
   .muted {
-    color: #a0aec0;
+    color: var(--faint);
     font-style: italic;
+    font-family: inherit;
   }
   .err {
-    color: #c53030;
+    color: #b4452f;
+    font-size: 13px;
   }
 </style>

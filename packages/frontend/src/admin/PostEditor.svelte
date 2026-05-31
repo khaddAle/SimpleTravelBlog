@@ -349,19 +349,22 @@
   .modal {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(16, 22, 32, 0.55);
+    backdrop-filter: blur(6px);
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 24px;
     /* Above Leaflet, whose controls sit at z-index 1000 — without this the
        location-picker map paints over the image-picker dialog. */
     z-index: 2000;
   }
   .modal-body {
-    background: #fff;
-    border-radius: 8px;
-    padding: 1rem;
-    width: min(720px, 92vw);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-pop);
+    padding: 22px 24px;
+    width: min(760px, 94vw);
     max-height: 88vh;
     overflow: auto;
   }
