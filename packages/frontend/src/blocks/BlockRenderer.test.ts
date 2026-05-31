@@ -16,7 +16,22 @@ describe('BlockRenderer', () => {
 
   it('dispatches a divider block', () => {
     const { container } = render(BlockRenderer, { block: { type: 'divider' } });
-    expect(container.querySelector('hr')).not.toBeNull();
+    expect(container.querySelector('.divider-block')).not.toBeNull();
+  });
+
+  it('forwards the lead flag so the first image bleeds at r169', () => {
+    const { container } = render(BlockRenderer, {
+      block: { type: 'image', imageId: 'i', caption: 'C' },
+      lead: true,
+    });
+    expect(container.querySelector('figure.bleed.block .frame.r169')).not.toBeNull();
+  });
+
+  it('renders a non-lead image inline at r43', () => {
+    const { container } = render(BlockRenderer, {
+      block: { type: 'image', imageId: 'i', caption: 'C' },
+    });
+    expect(container.querySelector('.wrap-narrow figure.block .frame.r43')).not.toBeNull();
   });
 
   it('renders every supported block type without error', () => {

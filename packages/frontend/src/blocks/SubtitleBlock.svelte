@@ -3,13 +3,17 @@
   let { block }: { block: Extract<Block, { type: 'subtitle' }> } = $props();
 </script>
 
-<h3 class="block block-subtitle">{block.text}</h3>
+<div class="wrap-narrow">
+  <h3 class="block-subtitle">{block.text}</h3>
+</div>
 
 <style>
   .block-subtitle {
-    margin: 1rem 0 0.25rem;
-    font-size: 1.3rem;
+    font-size: 21px;
+    line-height: 1.4;
     font-weight: 600;
-    color: #4a5568;
+    letter-spacing: -0.3px;
+    color: var(--muted);
+    margin: 40px 0 0;
   }
 </style>

@@ -57,4 +57,46 @@ describe('Lightbox', () => {
     render(Lightbox, { imageIds: ['a'], index: 0, caption: 'Strand', onClose: vi.fn() });
     expect(screen.getByText('Strand')).toBeInTheDocument();
   });
+
+  it('shows a position counter for multi-image groups and updates it', async () => {
+    const user = userEvent.setup();
+    render(Lightbox, { imageIds: ['a', 'b', 'c'], index: 0, onClose: vi.fn() });
+    expect(screen.getByText('1 / 3')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Nächstes Bild' }));
+    expect(screen.getByText('2 / 3')).toBeInTheDocument();
+  });
+
+  it('omits the counter for a single image', () => {
+    const { container } = render(Lightbox, { imageIds: ['only'], index: 0, onClose: vi.fn() });
+    expect(container.querySelector('.lb-count')?.textContent ?? '').toBe('');
+  });
+
+  it('closes when the backdrop is clicked but not when the image is clicked', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const { container } = render(Lightbox, { imageIds: ['a', 'b'], index: 0, onClose });
+    await user.click(container.querySelector('.lightbox img') as HTMLElement);
+    expect(onClose).not.toHaveBeenCalled();
+    await user.click(container.querySelector('.lightbox') as HTMLElement);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('advances on a leftward swipe and goes back on a rightward swipe', async () => {
+    render(Lightbox, { imageIds: ['a', 'b', 'c'], index: 0, onClose: vi.fn() });
+    const overlay = document.querySelector('.lightbox') as HTMLElement;
+    await fireEvent.touchStart(overlay, { touches: [{ clientX: 200 }] });
+    await fireEvent.touchEnd(overlay, { changedTouches: [{ clientX: 120 }] });
+    expect(src()).toContain('/b/display');
+    await fireEvent.touchStart(overlay, { touches: [{ clientX: 120 }] });
+    await fireEvent.touchEnd(overlay, { changedTouches: [{ clientX: 200 }] });
+    expect(src()).toContain('/a/display');
+  });
+
+  it('ignores a swipe shorter than the threshold', async () => {
+    render(Lightbox, { imageIds: ['a', 'b'], index: 0, onClose: vi.fn() });
+    const overlay = document.querySelector('.lightbox') as HTMLElement;
+    await fireEvent.touchStart(overlay, { touches: [{ clientX: 200 }] });
+    await fireEvent.touchEnd(overlay, { changedTouches: [{ clientX: 180 }] });
+    expect(src()).toContain('/a/display');
+  });
 });

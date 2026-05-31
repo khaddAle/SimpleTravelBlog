@@ -3,8 +3,10 @@ import { render } from '@testing-library/svelte';
 import DividerBlock from './DividerBlock.svelte';
 
 describe('DividerBlock', () => {
-  it('renders a horizontal rule', () => {
+  it('renders the three-dot divider inside the reading column', () => {
     const { container } = render(DividerBlock);
-    expect(container.querySelector('hr.block-divider')).not.toBeNull();
+    const divider = container.querySelector('.wrap-narrow .divider-block');
+    expect(divider).not.toBeNull();
+    expect(divider?.querySelectorAll('span')).toHaveLength(3);
   });
 });

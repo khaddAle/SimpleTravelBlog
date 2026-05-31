@@ -425,7 +425,10 @@ figure {
   margin: 0;
 }
 figure.block {
+  /* Only top/bottom — never set the horizontal margins here, or it overrides
+     `.bleed`'s `margin-left: 50%` centering (higher specificity). */
   margin-top: 44px;
+  margin-bottom: 44px;
 }
 figcaption {
   font-size: 12.5px;

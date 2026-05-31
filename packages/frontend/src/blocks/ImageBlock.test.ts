@@ -4,11 +4,30 @@ import userEvent from '@testing-library/user-event';
 import ImageBlock from './ImageBlock.svelte';
 
 describe('ImageBlock', () => {
-  it('renders the display image with the caption as alt and figcaption', () => {
-    render(ImageBlock, { block: { type: 'image', imageId: 'img1', caption: 'Gipfel' } });
+  it('renders an inline framed r43 photo with the caption as alt and figcaption', () => {
+    const { container } = render(ImageBlock, {
+      block: { type: 'image', imageId: 'img1', caption: 'Gipfel' },
+    });
+    const figure = container.querySelector('.wrap-narrow figure.block');
+    expect(figure).not.toBeNull();
     const img = screen.getByRole('img', { name: 'Gipfel' });
+    expect(img.closest('.photo .frame.r43')).not.toBeNull();
     expect(img).toHaveAttribute('src', '/api/public/images/img1/display');
-    expect(screen.getByText('Gipfel')).toBeInTheDocument();
+    expect(figure?.querySelector('figcaption')?.textContent).toBe('Gipfel');
+  });
+
+  it('renders a lead image as a bleed r169 photo (no reading-column wrapper)', () => {
+    const { container } = render(ImageBlock, {
+      block: { type: 'image', imageId: 'lead1', caption: 'Morgen' },
+      lead: true,
+    });
+    expect(container.querySelector('.wrap-narrow')).toBeNull();
+    const figure = container.querySelector('figure.bleed.block');
+    expect(figure).not.toBeNull();
+    expect(container.querySelector('.photo .frame.r169 img')).toHaveAttribute(
+      'src',
+      '/api/public/images/lead1/display',
+    );
   });
 
   it('opens the full image in a lightbox on click and closes it', async () => {

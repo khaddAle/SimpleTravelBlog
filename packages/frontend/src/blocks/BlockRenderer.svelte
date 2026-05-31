@@ -8,7 +8,8 @@
   import QuoteBlock from './QuoteBlock.svelte';
   import DividerBlock from './DividerBlock.svelte';
 
-  let { block }: { block: Block } = $props();
+  // `lead` marks the post's first image so it renders as the wide bleed header.
+  let { block, lead = false }: { block: Block; lead?: boolean } = $props();
 </script>
 
 {#if block.type === 'title'}
@@ -18,7 +19,7 @@
 {:else if block.type === 'paragraph'}
   <ParagraphBlock {block} />
 {:else if block.type === 'image'}
-  <ImageBlock {block} />
+  <ImageBlock {block} {lead} />
 {:else if block.type === 'gallery'}
   <GalleryBlock {block} />
 {:else if block.type === 'quote'}

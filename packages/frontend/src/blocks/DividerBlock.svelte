@@ -1,14 +1,7 @@
 <script lang="ts">
-  // Divider has no data; it is a purely visual separator.
+  // Divider has no data; it is a purely visual separator — three centered dots.
 </script>
 
-<hr class="block block-divider" />
-
-<style>
-  .block-divider {
-    margin: 2rem auto;
-    width: 40%;
-    border: none;
-    border-top: 1px solid #cbd5e0;
-  }
-</style>
+<div class="wrap-narrow">
+  <div class="divider-block"><span></span><span></span><span></span></div>
+</div>

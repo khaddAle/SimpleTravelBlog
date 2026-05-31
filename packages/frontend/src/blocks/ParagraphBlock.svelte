@@ -3,12 +3,13 @@
   let { block }: { block: Extract<Block, { type: 'paragraph' }> } = $props();
 </script>
 
-<p class="block block-paragraph">{block.text}</p>
+<div class="wrap-narrow">
+  <div class="prose"><p>{block.text}</p></div>
+</div>
 
 <style>
-  .block-paragraph {
-    margin: 0.75rem 0;
-    line-height: 1.7;
+  /* Preserve author line breaks within a paragraph block. */
+  p {
     white-space: pre-wrap;
   }
 </style>
