@@ -1,4 +1,5 @@
 import type { PostDto, TripDto } from '@stb/shared';
+import { countryName } from './countries.js';
 
 export interface TripGroup {
   tripId: string | undefined;
@@ -13,7 +14,9 @@ export interface CountryGroup {
 
 /**
  * Group posts into Country → Trip → Posts for the archive view. Countries are
- * sorted alphabetically; within a country, named trips sort alphabetically and
+ * sorted alphabetically by their German display name (the archive shows the long
+ * name, so the reader expects German alphabetical order, not ISO-code order);
+ * within a country, named trips sort alphabetically and
  * the "no trip" bucket (tripId undefined) comes last. Post order within a group
  * is preserved from the input (the API returns newest-first).
  */
@@ -30,7 +33,7 @@ export function groupPosts(posts: PostDto[], trips: TripDto[]): CountryGroup[] {
   }
 
   return [...byCountry.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => countryName(a).localeCompare(countryName(b), 'de'))
     .map(([country, countryTrips]) => ({
       country,
       trips: [...countryTrips.entries()]

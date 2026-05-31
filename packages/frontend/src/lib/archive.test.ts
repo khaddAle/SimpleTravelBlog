@@ -35,6 +35,12 @@ describe('groupPosts', () => {
     expect(de.trips.map((t) => t.tripName)).toEqual(['Alpen', 'Nordsee']);
   });
 
+  it('sorts countries by their German display name, not by ISO code', () => {
+    // By code AT < FR, but by German name "Frankreich" < "Österreich".
+    const groups = groupPosts([post('a', 'AT'), post('b', 'FR')], []);
+    expect(groups.map((g) => g.country)).toEqual(['FR', 'AT']);
+  });
+
   it('puts the no-trip bucket last with undefined name', () => {
     const groups = groupPosts([post('a', 'DE'), post('b', 'DE', 't1')], trips);
     const de = groups[0]!;
