@@ -30,6 +30,9 @@
     untrack(() => blocks.map((block) => ({ key: crypto.randomUUID(), block }))),
   );
 
+  // Which gap's insert menu is open (index into the gaps), or null.
+  let openInserter = $state<number | null>(null);
+
   function emit(): void {
     onChange(entries.map((e) => e.block));
   }
@@ -48,34 +51,47 @@
     emit();
   }
 
-  function add(block: Block): void {
-    entries.push({ key: crypto.randomUUID(), block });
+  function insertAt(index: number, block: Block): void {
+    entries.splice(index, 0, { key: crypto.randomUUID(), block });
     emit();
   }
 
-  function insertText(type: 'title' | 'subtitle' | 'paragraph'): void {
-    add({ type, text: '' });
+  function closeMenu(): void {
+    openInserter = null;
   }
 
-  function insertQuote(): void {
-    add({ type: 'quote', text: '' });
+  function toggleMenu(gap: number): void {
+    openInserter = openInserter === gap ? null : gap;
   }
 
-  function insertDivider(): void {
-    add({ type: 'divider' });
+  function insertText(gap: number, type: 'title' | 'subtitle' | 'paragraph'): void {
+    insertAt(gap, { type, text: '' });
+    closeMenu();
+  }
+
+  function insertQuote(gap: number): void {
+    insertAt(gap, { type: 'quote', text: '' });
+    closeMenu();
+  }
+
+  function insertDivider(gap: number): void {
+    insertAt(gap, { type: 'divider' });
+    closeMenu();
   }
 
   // Fresh inserts default the picker to "Nur unbenutzte" so newly uploaded
   // images surface first; editing (below) keeps it off so the current image
   // stays visible.
-  async function insertImage(): Promise<void> {
+  async function insertImage(gap: number): Promise<void> {
+    closeMenu();
     const id = await pickImage?.({ orphansOnly: true });
-    if (id) add({ type: 'image', imageId: id });
+    if (id) insertAt(gap, { type: 'image', imageId: id });
   }
 
-  async function insertGallery(): Promise<void> {
+  async function insertGallery(gap: number): Promise<void> {
+    closeMenu();
     const ids = await pickGallery?.({ orphansOnly: true });
-    if (ids && ids.length > 0) add({ type: 'gallery', imageIds: ids });
+    if (ids && ids.length > 0) insertAt(gap, { type: 'gallery', imageIds: ids });
   }
 
   async function changeImage(index: number): Promise<void> {
@@ -134,173 +150,530 @@
   };
 </script>
 
+{#snippet inserter(gap: number)}
+  <div class="inserter">
+    <span class="line"></span>
+    <button
+      type="button"
+      class="plus"
+      aria-label="Block einfügen"
+      aria-expanded={openInserter === gap}
+      onclick={() => toggleMenu(gap)}>+</button
+    >
+    {#if openInserter === gap}
+      <button type="button" class="menu-scrim" aria-label="Menü schließen" onclick={closeMenu}
+      ></button>
+      <div class="menu">
+        <div class="grp">Text</div>
+        <button type="button" onclick={() => insertText(gap, 'title')}>
+          <span class="ic" aria-hidden="true">H1</span>{TYPE_LABELS.title}
+        </button>
+        <button type="button" onclick={() => insertText(gap, 'subtitle')}>
+          <span class="ic" aria-hidden="true">H2</span>{TYPE_LABELS.subtitle}
+        </button>
+        <button type="button" onclick={() => insertText(gap, 'paragraph')}>
+          <span class="ic" aria-hidden="true">¶</span>{TYPE_LABELS.paragraph}
+        </button>
+        <button type="button" onclick={() => insertQuote(gap)}>
+          <span class="ic" aria-hidden="true">”</span>{TYPE_LABELS.quote}
+        </button>
+        <div class="grp">Medien &amp; mehr</div>
+        <button type="button" onclick={() => insertImage(gap)}>
+          <span class="ic" aria-hidden="true">▣</span>{TYPE_LABELS.image}
+        </button>
+        <button type="button" onclick={() => insertGallery(gap)}>
+          <span class="ic" aria-hidden="true">▦</span>{TYPE_LABELS.gallery}
+        </button>
+        <button type="button" onclick={() => insertDivider(gap)}>
+          <span class="ic" aria-hidden="true">⋯</span>{TYPE_LABELS.divider}
+        </button>
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
 <div class="block-editor">
-  <ol class="entries">
+  {#if entries.length === 0}
+    <p class="empty">Noch keine Blöcke. Füge mit „+" welche hinzu.</p>
+  {/if}
+
+  <div class="blocks">
+    {@render inserter(0)}
     {#each entries as entry, index (entry.key)}
-      <li class="entry" data-type={entry.block.type}>
-        <div class="entry-header">
-          <span class="entry-label">{TYPE_LABELS[entry.block.type]}</span>
-          <div class="entry-actions">
-            <button
-              type="button"
-              aria-label="Nach oben verschieben"
-              disabled={index === 0}
-              onclick={() => move(index, -1)}>▲</button
-            >
-            <button
-              type="button"
-              aria-label="Nach unten verschieben"
-              disabled={index === entries.length - 1}
-              onclick={() => move(index, 1)}>▼</button
-            >
-            <button type="button" aria-label="Entfernen" onclick={() => remove(index)}
-              >✕</button
-            >
-          </div>
+      <div class="block b-{entry.block.type}">
+        <span class="type-tag">{TYPE_LABELS[entry.block.type]}</span>
+        <div class="tools">
+          <button
+            type="button"
+            aria-label="Nach oben verschieben"
+            disabled={index === 0}
+            onclick={() => move(index, -1)}>▲</button
+          >
+          <button
+            type="button"
+            aria-label="Nach unten verschieben"
+            disabled={index === entries.length - 1}
+            onclick={() => move(index, 1)}>▼</button
+          >
+          <button type="button" class="del" aria-label="Entfernen" onclick={() => remove(index)}
+            >✕</button
+          >
         </div>
 
         {#if entry.block.type === 'title' || entry.block.type === 'subtitle'}
           <input
             type="text"
+            class="text-input {entry.block.type === 'title' ? 'as-title' : 'as-subtitle'}"
             value={entry.block.text}
             aria-label={TYPE_LABELS[entry.block.type]}
+            placeholder={TYPE_LABELS[entry.block.type]}
             oninput={(e) => setText(index, e.currentTarget.value)}
           />
         {:else if entry.block.type === 'paragraph'}
           <textarea
+            class="text-input as-paragraph"
             value={entry.block.text}
             aria-label="Absatz"
+            placeholder="Text schreiben…"
             oninput={(e) => setText(index, e.currentTarget.value)}
           ></textarea>
         {:else if entry.block.type === 'quote'}
           <textarea
+            class="text-input as-quote"
             value={entry.block.text}
             aria-label="Zitat"
+            placeholder="Zitat…"
             oninput={(e) => setText(index, e.currentTarget.value)}
           ></textarea>
           <input
             type="text"
+            class="text-input as-cite"
             value={entry.block.source ?? ''}
             aria-label="Quelle"
             placeholder="Quelle (optional)"
             oninput={(e) => setSource(index, e.currentTarget.value)}
           />
+        {:else if entry.block.type === 'divider'}
+          <div class="b-divider" aria-hidden="true"><span></span><span></span><span></span></div>
         {:else if entry.block.type === 'image'}
-          <img class="preview" src={imageUrl(entry.block.imageId, 'thumb')} alt="" />
-          <button type="button" class="change" onclick={() => changeImage(index)}>Bild ändern</button>
+          <div class="ph-frame">
+            <div class="inner">
+              <img src={imageUrl(entry.block.imageId, 'thumb')} alt="" />
+              <div class="img-actions">
+                <button type="button" class="mini-btn change" onclick={() => changeImage(index)}>
+                  Bild ändern
+                </button>
+              </div>
+            </div>
+          </div>
           <input
             type="text"
+            class="caption-input"
             value={entry.block.caption ?? ''}
             aria-label="Bildunterschrift"
             placeholder="Bildunterschrift (optional)"
             oninput={(e) => setCaption(index, e.currentTarget.value)}
           />
         {:else if entry.block.type === 'gallery'}
-          <p class="gallery-summary">{entry.block.imageIds.length} Bilder</p>
-          <div class="gallery-thumbs">
-            {#each entry.block.imageIds as id (id)}
-              <img src={imageUrl(id, 'thumb')} alt="" />
-            {/each}
+          <div class="b-gallery">
+            <p class="gallery-summary">{entry.block.imageIds.length} Bilder</p>
+            <div class="gallery-thumbs">
+              {#each entry.block.imageIds as id (id)}
+                <span class="cell"><span class="inner"><img src={imageUrl(id, 'thumb')} alt="" /></span></span>
+              {/each}
+            </div>
+            <button type="button" class="mini-btn change" onclick={() => changeGallery(index)}>
+              Galerie bearbeiten
+            </button>
           </div>
-          <button type="button" class="change" onclick={() => changeGallery(index)}
-            >Galerie bearbeiten</button
-          >
           <input
             type="text"
+            class="caption-input"
             value={entry.block.caption ?? ''}
             aria-label="Galerie-Bildunterschrift"
             placeholder="Bildunterschrift (optional)"
             oninput={(e) => setGalleryCaption(index, e.currentTarget.value)}
           />
         {/if}
-      </li>
+      </div>
+      {@render inserter(index + 1)}
     {/each}
-  </ol>
-
-  {#if entries.length === 0}
-    <p class="empty">Noch keine Blöcke. Füge unten welche hinzu.</p>
-  {/if}
-
-  <div class="palette" role="group" aria-label="Block hinzufügen">
-    <button type="button" onclick={() => insertText('title')}>+ Titel</button>
-    <button type="button" onclick={() => insertText('subtitle')}>+ Untertitel</button>
-    <button type="button" onclick={() => insertText('paragraph')}>+ Absatz</button>
-    <button type="button" onclick={insertQuote}>+ Zitat</button>
-    <button type="button" onclick={insertDivider}>+ Trenner</button>
-    <button type="button" onclick={insertImage}>+ Bild</button>
-    <button type="button" onclick={insertGallery}>+ Galerie</button>
   </div>
 </div>
 
 <style>
-  .entries {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
+  .empty {
+    color: var(--faint);
+    font-style: italic;
+    margin: 0 0 4px;
+    padding: 0 14px;
   }
-  .entry {
-    border: 1px solid #e2e8f0;
+
+  /* ---- block + control rail ---- */
+  .block {
+    position: relative;
+    padding: 8px 96px 8px 14px;
     border-radius: 6px;
-    padding: 0.5rem 0.75rem;
+    transition: background 0.12s;
   }
-  .entry-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.4rem;
+  .block:hover {
+    background: #f6f9fc;
   }
-  .entry-label {
-    font-size: 0.8rem;
+  .type-tag {
+    position: absolute;
+    left: -86px;
+    top: 12px;
+    width: 76px;
+    text-align: right;
+    font-size: 10.5px;
     font-weight: 600;
-    color: #718096;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
+    color: var(--faint);
+    opacity: 0;
+    transition: opacity 0.12s;
   }
-  .entry-actions button {
-    margin-left: 0.25rem;
+  .block:hover .type-tag,
+  .block:focus-within .type-tag {
+    opacity: 1;
   }
-  input[type='text'],
-  textarea {
+  .tools {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .block:hover .tools,
+  .block:focus-within .tools {
+    opacity: 1;
+  }
+  .tools button {
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 5px;
+    cursor: pointer;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    padding: 0;
+  }
+  .tools button:hover {
+    border-color: var(--accent);
+    color: var(--ink);
+  }
+  .tools button.del:hover {
+    border-color: #b4452f;
+    color: #b4452f;
+  }
+  .tools button:disabled {
+    opacity: 0.3;
+    cursor: default;
+    border-color: var(--line);
+    color: var(--faint);
+  }
+
+  /* ---- editable text blocks (form controls styled as document text) ---- */
+  .text-input,
+  .caption-input {
     width: 100%;
-    padding: 0.4rem;
+    border: 0;
+    background: transparent;
+    padding: 2px 0;
     font: inherit;
+    color: var(--ink);
+    resize: none;
+    field-sizing: content;
   }
-  textarea {
-    min-height: 4rem;
-    resize: vertical;
-  }
-  .preview {
-    max-height: 80px;
+  .text-input:focus,
+  .caption-input:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(63, 102, 153, 0.25);
     border-radius: 4px;
-    margin-bottom: 0.4rem;
   }
-  .change {
-    display: block;
-    margin-bottom: 0.4rem;
-    font-size: 0.85rem;
+  .text-input::placeholder,
+  .caption-input::placeholder {
+    color: var(--faint);
+  }
+  .as-title {
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    line-height: 1.08;
+  }
+  .as-subtitle {
+    font-size: 19px;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+  .as-paragraph {
+    font-size: 16.5px;
+    line-height: 1.7;
+    color: #262b33;
+    min-height: 4.2em;
+  }
+  .as-quote {
+    border-left: 3px solid var(--accent);
+    padding-left: 18px;
+    font-size: 20px;
+    font-weight: 500;
+    line-height: 1.4;
+    color: var(--ink);
+    min-height: 2.4em;
+  }
+  .as-cite {
+    font-size: 12.5px;
+    color: var(--faint);
+    margin-top: 4px;
+  }
+  .caption-input {
+    font-size: 12.5px;
+    color: var(--faint);
+    text-align: center;
+    margin-top: 9px;
+  }
+
+  .b-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    padding: 14px 0;
+  }
+  .b-divider span {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--faint);
+    opacity: 0.6;
+  }
+
+  /* ---- image + gallery ---- */
+  .ph-frame {
+    background: var(--surface);
+    padding: 11px;
+    border: 1px solid var(--matedge);
+    box-shadow: var(--shadow-frame-sm);
+  }
+  .ph-frame .inner {
+    border: 1px solid var(--keyline);
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    line-height: 0;
+    position: relative;
+  }
+  .ph-frame img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .img-actions {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    opacity: 0;
+    background: rgba(18, 28, 46, 0.28);
+    transition: opacity 0.12s;
+  }
+  .ph-frame .inner:hover .img-actions,
+  .block:focus-within .img-actions {
+    opacity: 1;
+  }
+  .mini-btn {
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    background: var(--surface);
+    border: none;
+    padding: 8px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    color: var(--ink);
+  }
+  .b-gallery .gallery-summary {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 0 0 10px;
   }
   .gallery-thumbs {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
-    gap: 0.3rem;
-    margin-top: 0.3rem;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+  .gallery-thumbs .cell {
+    display: block;
+    background: var(--surface);
+    padding: 8px;
+    border: 1px solid var(--matedge);
+    box-shadow: var(--shadow-frame-sm);
+  }
+  .gallery-thumbs .inner {
+    display: block;
+    border: 1px solid var(--keyline);
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    line-height: 0;
   }
   .gallery-thumbs img {
     width: 100%;
-    height: 64px;
+    height: 100%;
     object-fit: cover;
-    border-radius: 4px;
   }
-  .palette {
-    margin-top: 1rem;
+  .b-gallery .change {
+    margin-top: 12px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .change.mini-btn:hover {
+    border-color: var(--accent);
+  }
+
+  /* ---- inserter ---- */
+  .inserter {
+    position: relative;
+    height: 16px;
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
+    align-items: center;
+    justify-content: center;
   }
-  .empty {
-    color: #a0aec0;
-    font-style: italic;
+  .inserter .line {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    height: 1px;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .inserter:hover .line {
+    opacity: 0.5;
+  }
+  .inserter .plus {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition:
+      opacity 0.12s,
+      transform 0.12s;
+    z-index: 2;
+  }
+  .inserter:hover .plus,
+  .inserter .plus[aria-expanded='true'] {
+    opacity: 1;
+  }
+  .inserter .plus:hover {
+    transform: scale(1.12);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .menu-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    border: 0;
+    background: transparent;
+    cursor: default;
+  }
+  .menu {
+    position: absolute;
+    top: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-pop);
+    padding: 5px;
+    width: 188px;
+  }
+  .menu button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    border: none;
+    background: transparent;
+    padding: 9px 10px;
+    border-radius: 5px;
+    font: inherit;
+    font-size: 14px;
+    color: var(--ink);
+    cursor: pointer;
+    text-align: left;
+  }
+  .menu button:hover {
+    background: var(--panel);
+  }
+  .menu .ic {
+    width: 22px;
+    color: var(--faint);
+    font-size: 13px;
+  }
+  .menu .grp {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--faint);
+    padding: 8px 10px 4px;
+  }
+
+  /* Touch: controls are hover-only on desktop, but coarse pointers can't hover —
+     keep them visible there. Tap targets grow to a comfortable size. */
+  @media (hover: none), (pointer: coarse) {
+    .inserter .plus {
+      opacity: 1;
+    }
+    .tools button {
+      width: 40px;
+      height: 40px;
+    }
+    .block {
+      padding-right: 0;
+      padding-top: 50px;
+    }
+    .tools {
+      opacity: 1;
+    }
+    .type-tag {
+      display: none;
+    }
+    .img-actions {
+      opacity: 1;
+      background: rgba(18, 28, 46, 0.2);
+    }
+  }
+  @media (max-width: 640px) {
+    .block {
+      padding-left: 10px;
+    }
+    .as-title {
+      font-size: 28px;
+    }
+    .gallery-thumbs {
+      grid-template-columns: 1fr 1fr;
+    }
   }
 </style>

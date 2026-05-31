@@ -48,6 +48,16 @@ async function fillRequiredMeta(
   await user.type(screen.getByLabelText('Ortsname'), 'Zugspitze');
 }
 
+/** Add a block through the Fernweh inserter "+" menu (last gap = append). */
+async function insertBlock(
+  user: ReturnType<typeof userEvent.setup>,
+  typeLabel: string,
+): Promise<void> {
+  const adders = screen.getAllByRole('button', { name: 'Block einfügen' });
+  await user.click(adders[adders.length - 1]!);
+  await user.click(screen.getByRole('button', { name: typeLabel }));
+}
+
 beforeEach(() => {
   push.mockClear();
   auth.user = { id: 'u1', username: 'mum', role: 'admin' };
@@ -62,7 +72,7 @@ describe('PostEditor (create)', () => {
     render(PostEditor, {});
 
     await fillRequiredMeta(user);
-    await user.click(screen.getByRole('button', { name: '+ Absatz' }));
+    await insertBlock(user, 'Absatz');
     await user.click(screen.getByRole('button', { name: 'Entwurf speichern' }));
 
     await waitFor(() => {
@@ -91,7 +101,7 @@ describe('PostEditor (create)', () => {
     vi.spyOn(api, 'listImages').mockResolvedValue({ items: [], page: 1, pageSize: 24, total: 0 });
     render(PostEditor, {});
     await screen.findByLabelText('Titel');
-    await user.click(screen.getByRole('button', { name: '+ Bild' }));
+    await insertBlock(user, 'Bild');
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Abbrechen' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -102,7 +112,7 @@ describe('PostEditor (create)', () => {
     vi.spyOn(api, 'listImages').mockResolvedValue({ items: [], page: 1, pageSize: 24, total: 0 });
     render(PostEditor, {});
     await screen.findByLabelText('Titel');
-    await user.click(screen.getByRole('button', { name: '+ Bild' }));
+    await insertBlock(user, 'Bild');
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(screen.getByLabelText('Nur unbenutzte')).toBeChecked();
   });
@@ -242,7 +252,7 @@ describe('PostEditor (edit)', () => {
     });
     render(PostEditor, { params: { id: 'p1' } });
     await screen.findByLabelText('Titel');
-    await user.click(screen.getByRole('button', { name: '+ Galerie' }));
+    await insertBlock(user, 'Galerie');
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(await screen.findByLabelText('alpha.jpg')).toBeInTheDocument();

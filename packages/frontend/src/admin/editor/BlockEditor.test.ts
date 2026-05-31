@@ -10,24 +10,59 @@ function setup(blocks: Block[], extra: Record<string, unknown> = {}) {
   return { onChange, ...result };
 }
 
+/**
+ * Open an inserter "+" (the last gap by default = append) and choose a block
+ * type from its menu. Mirrors the Fernweh insert affordance between blocks.
+ */
+async function insert(
+  user: ReturnType<typeof userEvent.setup>,
+  typeLabel: string,
+  gap: 'last' | number = 'last',
+): Promise<void> {
+  const adders = screen.getAllByRole('button', { name: 'Block einfügen' });
+  const plus = gap === 'last' ? adders[adders.length - 1]! : adders[gap]!;
+  await user.click(plus);
+  await user.click(screen.getByRole('button', { name: typeLabel }));
+}
+
+/** The block list items (`.block`), in document order. */
+function blocks(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>('.block'));
+}
+
 describe('BlockEditor', () => {
   it('shows an empty hint when there are no blocks', () => {
     setup([]);
     expect(screen.getByText(/Noch keine Blöcke/)).toBeInTheDocument();
   });
 
-  it('inserts a paragraph via the palette', async () => {
+  it('inserts a paragraph via the inserter menu', async () => {
     const user = userEvent.setup();
     const { onChange } = setup([]);
-    await user.click(screen.getByRole('button', { name: '+ Absatz' }));
+    await insert(user, 'Absatz');
     expect(onChange).toHaveBeenLastCalledWith([{ type: 'paragraph', text: '' }]);
   });
 
   it('inserts a divider', async () => {
     const user = userEvent.setup();
     const { onChange } = setup([]);
-    await user.click(screen.getByRole('button', { name: '+ Trenner' }));
+    await insert(user, 'Trenner');
     expect(onChange).toHaveBeenLastCalledWith([{ type: 'divider' }]);
+  });
+
+  it('inserts at the chosen gap, not only at the end', async () => {
+    const user = userEvent.setup();
+    const { onChange } = setup([
+      { type: 'title', text: 'A' },
+      { type: 'paragraph', text: 'B' },
+    ]);
+    // Gap 0 is before the first block.
+    await insert(user, 'Trenner', 0);
+    expect(onChange).toHaveBeenLastCalledWith([
+      { type: 'divider' },
+      { type: 'title', text: 'A' },
+      { type: 'paragraph', text: 'B' },
+    ]);
   });
 
   it('edits a title block text', async () => {
@@ -39,11 +74,11 @@ describe('BlockEditor', () => {
 
   it('reorders with ▲/▼ and disables at the ends', async () => {
     const user = userEvent.setup();
-    const { onChange } = setup([
+    const { onChange, container } = setup([
       { type: 'title', text: 'A' },
       { type: 'paragraph', text: 'B' },
     ]);
-    const items = screen.getAllByRole('listitem');
+    const items = blocks(container);
     // First item's "up" is disabled; last item's "down" is disabled.
     expect(within(items[0]!).getByLabelText('Nach oben verschieben')).toBeDisabled();
     expect(within(items[1]!).getByLabelText('Nach unten verschieben')).toBeDisabled();
@@ -57,11 +92,11 @@ describe('BlockEditor', () => {
 
   it('deletes a block', async () => {
     const user = userEvent.setup();
-    const { onChange } = setup([
+    const { onChange, container } = setup([
       { type: 'title', text: 'A' },
       { type: 'divider' },
     ]);
-    const items = screen.getAllByRole('listitem');
+    const items = blocks(container);
     await user.click(within(items[0]!).getByLabelText('Entfernen'));
     expect(onChange).toHaveBeenLastCalledWith([{ type: 'divider' }]);
   });
@@ -70,7 +105,7 @@ describe('BlockEditor', () => {
     const user = userEvent.setup();
     const pickImage = vi.fn().mockResolvedValue('img42');
     const { onChange } = setup([], { pickImage });
-    await user.click(screen.getByRole('button', { name: '+ Bild' }));
+    await insert(user, 'Bild');
     expect(pickImage).toHaveBeenCalled();
     expect(onChange).toHaveBeenLastCalledWith([{ type: 'image', imageId: 'img42' }]);
   });
@@ -79,7 +114,7 @@ describe('BlockEditor', () => {
     const user = userEvent.setup();
     const pickImage = vi.fn().mockResolvedValue(null);
     const { onChange } = setup([], { pickImage });
-    await user.click(screen.getByRole('button', { name: '+ Bild' }));
+    await insert(user, 'Bild');
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -87,7 +122,7 @@ describe('BlockEditor', () => {
     const user = userEvent.setup();
     const pickGallery = vi.fn().mockResolvedValue(['a', 'b']);
     const { onChange } = setup([], { pickGallery });
-    await user.click(screen.getByRole('button', { name: '+ Galerie' }));
+    await insert(user, 'Galerie');
     expect(onChange).toHaveBeenLastCalledWith([{ type: 'gallery', imageIds: ['a', 'b'] }]);
   });
 
@@ -95,7 +130,7 @@ describe('BlockEditor', () => {
     const user = userEvent.setup();
     const pickImage = vi.fn().mockResolvedValue('img42');
     setup([], { pickImage });
-    await user.click(screen.getByRole('button', { name: '+ Bild' }));
+    await insert(user, 'Bild');
     expect(pickImage).toHaveBeenCalledWith({ orphansOnly: true });
   });
 
@@ -103,7 +138,7 @@ describe('BlockEditor', () => {
     const user = userEvent.setup();
     const pickGallery = vi.fn().mockResolvedValue(['a']);
     setup([], { pickGallery });
-    await user.click(screen.getByRole('button', { name: '+ Galerie' }));
+    await insert(user, 'Galerie');
     expect(pickGallery).toHaveBeenCalledWith({ orphansOnly: true });
   });
 
@@ -159,9 +194,9 @@ describe('BlockEditor', () => {
   it('inserts a subtitle and a title', async () => {
     const user = userEvent.setup();
     const { onChange } = setup([]);
-    await user.click(screen.getByRole('button', { name: '+ Untertitel' }));
+    await insert(user, 'Untertitel');
     expect(onChange).toHaveBeenLastCalledWith([{ type: 'subtitle', text: '' }]);
-    await user.click(screen.getByRole('button', { name: '+ Titel' }));
+    await insert(user, 'Titel');
     expect(onChange).toHaveBeenLastCalledWith([
       { type: 'subtitle', text: '' },
       { type: 'title', text: '' },
@@ -179,11 +214,11 @@ describe('BlockEditor', () => {
 
   it('moves a block down', async () => {
     const user = userEvent.setup();
-    const { onChange } = setup([
+    const { onChange, container } = setup([
       { type: 'title', text: 'A' },
       { type: 'paragraph', text: 'B' },
     ]);
-    const items = screen.getAllByRole('listitem');
+    const items = blocks(container);
     await user.click(within(items[0]!).getByLabelText('Nach unten verschieben'));
     expect(onChange).toHaveBeenLastCalledWith([
       { type: 'paragraph', text: 'B' },
