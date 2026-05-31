@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import type { ImageDto } from '@stb/shared';
 import { auth } from '../lib/auth.svelte.js';
 import { api, ApiError } from '../lib/api.js';
+import type { EventSourceLike } from '../lib/uploads.js';
 
 vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
 
@@ -20,6 +21,16 @@ function image(id: string, filename: string): ImageDto {
     thumbUrl: `/api/public/images/${id}/thumb`,
     createdAt: '2026-01-01T00:00:00.000Z',
   };
+}
+
+class FakeEventSource implements EventSourceLike {
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onerror: ((event: unknown) => void) | null = null;
+  constructor(public url: string) {}
+  emit(data: unknown): void {
+    this.onmessage?.({ data: JSON.stringify(data) });
+  }
+  close(): void {}
 }
 
 beforeEach(() => {
@@ -39,7 +50,48 @@ describe('ImageLibrary', () => {
     expect(await screen.findByText('alpha.jpg')).toBeInTheDocument();
   });
 
-  it('deletes an unreferenced image', async () => {
+  it('searches by filename', async () => {
+    const user = userEvent.setup();
+    const list = vi.spyOn(api, 'listImages');
+    render(ImageLibrary);
+    await screen.findByText('alpha.jpg');
+    await user.type(screen.getByLabelText('Nach Dateiname suchen'), 'alp');
+    await waitFor(() =>
+      expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ q: 'alp' })),
+    );
+  });
+
+  it('changes the sort order', async () => {
+    const user = userEvent.setup();
+    const list = vi.spyOn(api, 'listImages');
+    render(ImageLibrary);
+    await screen.findByText('alpha.jpg');
+    await user.selectOptions(screen.getByLabelText('Sortierung'), 'filename');
+    await waitFor(() =>
+      expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'filename' })),
+    );
+  });
+
+  it('filters to orphans via the segment', async () => {
+    const user = userEvent.setup();
+    const list = vi.spyOn(api, 'listImages');
+    render(ImageLibrary);
+    await screen.findByText('alpha.jpg');
+    await user.click(screen.getByRole('button', { name: 'Verwaist' }));
+    await waitFor(() =>
+      expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ orphansOnly: true })),
+    );
+  });
+
+  it('shows usage on demand', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'imageUsage').mockResolvedValue([{ id: 'p1', title: 'Berge' }]);
+    render(ImageLibrary);
+    await user.click(await screen.findByRole('button', { name: 'Wo verwendet?' }));
+    await waitFor(() => expect(screen.getByText('Berge')).toBeInTheDocument());
+  });
+
+  it('deletes an unreferenced image from its card', async () => {
     const user = userEvent.setup();
     const del = vi.spyOn(api, 'deleteImage').mockResolvedValue();
     render(ImageLibrary);
@@ -63,12 +115,15 @@ describe('ImageLibrary', () => {
     );
   });
 
-  it('shows usage on demand', async () => {
+  it('selects images and deletes them in selection mode', async () => {
     const user = userEvent.setup();
-    vi.spyOn(api, 'imageUsage').mockResolvedValue([{ id: 'p1', title: 'Berge' }]);
+    const del = vi.spyOn(api, 'deleteImage').mockResolvedValue();
     render(ImageLibrary);
-    await user.click(await screen.findByRole('button', { name: 'Verwendung' }));
-    await waitFor(() => expect(screen.getByText('Berge')).toBeInTheDocument());
+    await screen.findByText('alpha.jpg');
+    await user.click(screen.getByRole('button', { name: 'Auswählen' }));
+    await user.click(screen.getByLabelText('alpha.jpg auswählen'));
+    await user.click(screen.getByRole('button', { name: 'Löschen (1)' }));
+    await waitFor(() => expect(del).toHaveBeenCalledWith('a'));
   });
 
   it('asks to confirm and shows the count before deleting unused images', async () => {
@@ -92,7 +147,6 @@ describe('ImageLibrary', () => {
     const callsBefore = list.mock.calls.length;
     await user.click(within(dialog).getByRole('button', { name: 'Löschen' }));
     expect(del).toHaveBeenCalled();
-    // List reloads after the bulk delete.
     await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(callsBefore));
   });
 
@@ -106,5 +160,28 @@ describe('ImageLibrary', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
     expect(del).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('uploads a file and reloads when it completes', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'uploadImage').mockResolvedValue({ uploadId: 'up1', imageId: 'c' });
+    const list = vi.spyOn(api, 'listImages');
+    let current: FakeEventSource | undefined;
+    render(ImageLibrary, {
+      eventSourceFactory: (url: string) => {
+        current = new FakeEventSource(url);
+        return current;
+      },
+    });
+    await screen.findByText('alpha.jpg');
+
+    const file = new File([new Uint8Array([1])], 'neu.jpg', { type: 'image/jpeg' });
+    await user.upload(screen.getByLabelText('Hochladen'), file);
+    expect(api.uploadImage).toHaveBeenCalledWith(file);
+
+    await waitFor(() => expect(current).toBeDefined());
+    const callsBefore = list.mock.calls.length;
+    current!.emit({ type: 'done', image: image('c', 'neu.jpg') });
+    await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(callsBefore));
   });
 });
