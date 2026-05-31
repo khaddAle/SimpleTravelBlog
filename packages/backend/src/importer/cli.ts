@@ -13,6 +13,8 @@ import {
 } from './wp.js';
 import { drainSseEvents } from './sse.js';
 import { withRetry } from './retry.js';
+import { createProgressTracker } from './progress.js';
+import { manifestFilename, parseManifest, type Manifest } from './manifest.js';
 
 /** Build an onRetry handler that logs each transient failure + backoff to stdout. */
 const warnRetry =
@@ -43,6 +45,14 @@ const warnRetry =
  * image (so you can raise the server's MAX_UPLOAD_BYTES before a live run);
  * `--gallery-min=N` (default 3, floored at 2) sets how many consecutive
  * caption-less images collapse into a single gallery block.
+ *
+ * Resumability: a live run records each uploaded `source_url → imageId` to a
+ * dedup manifest beside the report (host-namespaced, e.g.
+ * `manifest-<host>.json`), so re-running after a crash skips already-uploaded
+ * images instead of duplicating them. `--manifest=<path>` overrides the path,
+ * `--reset-manifest` forces a clean re-upload, `--no-dedup` disables it. The
+ * upload/create loops print a throttled progress line (current/total, %,
+ * elapsed, rate, ETA) so a multi-hour run is visibly alive.
  */
 
 interface Args {
@@ -59,6 +69,14 @@ interface Args {
   limit: number | undefined;
   /** Delay between sequential image uploads, ms — eases load on the Pi. */
   throttleMs: number;
+  /**
+   * Path to the cross-run dedup manifest (`source_url → imageId`), or undefined
+   * to disable dedup (`--no-dedup`). Defaults to a host-namespaced file beside
+   * the report so a crashed run can resume without re-uploading.
+   */
+  manifestPath: string | undefined;
+  /** Ignore (and overwrite) any existing manifest — force a clean re-upload. */
+  resetManifest: boolean;
   map: MapOptions;
 }
 
@@ -96,18 +114,29 @@ function parseArgs(argv: string[]): Args {
   const limit = num('limit');
   const throttle = num('throttle-ms');
 
+  const apiUrl = (flags.get('api-url') ?? 'http://localhost:4000').replace(/\/$/, '');
+  const out = flags.get('out') ?? 'migration-report.json';
+  // Dedup manifest lives beside the report, namespaced by target host, unless
+  // overridden by --manifest or disabled by --no-dedup.
+  const manifestFlag = flags.get('manifest');
+  const manifestPath = bare.has('no-dedup')
+    ? undefined
+    : (manifestFlag ?? path.join(path.dirname(out), manifestFilename(apiUrl)));
+
   return {
     wpUrl: flags.get('wp-url'),
     sourceDir: flags.get('source-dir'),
     wpToken: flags.get('wp-token'),
-    apiUrl: (flags.get('api-url') ?? 'http://localhost:4000').replace(/\/$/, ''),
+    apiUrl,
     username: flags.get('username'),
     password: flags.get('password'),
     dryRun: bare.has('dry-run'),
-    out: flags.get('out') ?? 'migration-report.json',
+    out,
     saveCorpus: flags.get('save-corpus'),
     limit: limit !== undefined && Number.isFinite(limit) ? limit : undefined,
     throttleMs: throttle !== undefined && Number.isFinite(throttle) ? Math.max(0, throttle) : 50,
+    manifestPath,
+    resetManifest: bare.has('reset-manifest'),
     map,
   };
 }
@@ -279,6 +308,17 @@ async function createPost(
   return postCreatedSchema.parse(await res.json()).post.id;
 }
 
+/** Load the dedup manifest, returning an empty map if the file does not exist. */
+async function loadManifest(file: string): Promise<Manifest> {
+  try {
+    const raw: unknown = JSON.parse(await readFile(file, 'utf8'));
+    return parseManifest(raw);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    throw err;
+  }
+}
+
 // --- orchestration ---------------------------------------------------------
 
 interface RunResult {
@@ -292,19 +332,54 @@ async function runLive(args: Args, plan: ImportPlan): Promise<RunResult> {
   if (!args.username || !args.password) throw new Error('live import needs --username and --password');
   const session = await login(args.apiUrl, args.username, args.password);
 
+  // Cross-run dedup: reuse already-uploaded sources so a crashed run resumes
+  // instead of re-uploading everything. Persisted incrementally (and at the
+  // end) so progress survives an abort mid-run.
+  const manifest: Manifest =
+    args.manifestPath && !args.resetManifest ? await loadManifest(args.manifestPath) : {};
+  let sinceFlush = 0;
+  const persistManifest = async (): Promise<void> => {
+    if (!args.manifestPath) return;
+    await mkdir(path.dirname(path.resolve(args.manifestPath)), { recursive: true });
+    await writeFile(args.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  };
+
   const uploaded: Record<string, string> = {};
+  const total = plan.imageSources.length;
+  const progress = createProgressTracker({ total, label: 'Bilder' });
+  let done = 0;
+  let skipped = 0;
   let first = true;
+  process.stdout.write(`\nBilder hochladen: ${total}\n`);
   for (const src of plan.imageSources) {
-    // Sequential uploads with a configurable gap so the Pi's background
-    // transcode (no server-side concurrency cap) is not overwhelmed.
-    if (!first) await sleep(args.throttleMs);
-    first = false;
-    process.stdout.write(`  ↑ ${src}\n`);
-    uploaded[src] = await uploadImage(args.apiUrl, session, src);
+    const cached = manifest[src];
+    if (cached) {
+      // Already uploaded in a previous run — reuse the id, no network call.
+      uploaded[src] = cached;
+      skipped += 1;
+    } else {
+      // Sequential uploads with a configurable gap so the Pi's background
+      // transcode (no server-side concurrency cap) is not overwhelmed.
+      if (!first) await sleep(args.throttleMs);
+      first = false;
+      const imageId = await uploadImage(args.apiUrl, session, src);
+      uploaded[src] = imageId;
+      manifest[src] = imageId;
+      sinceFlush += 1;
+      if (sinceFlush >= 25) {
+        await persistManifest();
+        sinceFlush = 0;
+      }
+    }
+    done += 1;
+    const line = progress.tick(done, { skipped });
+    if (line) process.stdout.write(`  ${line}\n`);
   }
+  await persistManifest();
 
   const created: RunResult['created'] = [];
   const finalizeLosses: RunResult['finalizeLosses'] = [];
+  process.stdout.write(`\nBeiträge anlegen: ${plan.mapped.length}\n`);
   for (const m of plan.mapped) {
     const { blocks, losses } = finalizeBlocks(m.request.blocks, (src) => uploaded[src]);
     for (const l of losses) finalizeLosses.push({ slug: m.slug, src: l.detail });
