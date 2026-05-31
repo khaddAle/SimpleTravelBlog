@@ -31,3 +31,6 @@ Thumbs.db
 
 # WP migration: corpus + reports (local only, never committed)
 import/
+
+# Local design-preview harness: mock API + screenshot scripts and their output
+.preview/
