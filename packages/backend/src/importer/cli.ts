@@ -12,6 +12,15 @@ import {
   type MapOptions,
 } from './wp.js';
 import { drainSseEvents } from './sse.js';
+import { withRetry } from './retry.js';
+
+/** Build an onRetry handler that logs each transient failure + backoff to stdout. */
+const warnRetry =
+  (label: string) =>
+  (err: unknown, attempt: number, delayMs: number): void => {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stdout.write(`  ⚠ ${label}: ${msg} — Versuch ${attempt} gescheitert, erneut in ${delayMs}ms\n`);
+  };
 
 /**
  * WordPress importer entrypoint. Reads a WP REST corpus (live `--wp-url` or a
@@ -110,7 +119,9 @@ async function fetchAll(base: string, kind: 'posts' | 'media', token?: string): 
   const all: unknown[] = [];
   for (let page = 1; ; page++) {
     const url = `${base}/wp-json/wp/v2/${kind}?per_page=${perPage}&page=${page}`;
-    const res = await fetch(url, { headers });
+    const res = await withRetry(() => fetch(url, { headers }), {
+      onRetry: warnRetry(`WP ${kind} Seite ${page}`),
+    });
     if (res.status === 400) break; // WP returns 400 past the last page
     if (!res.ok) throw new Error(`WP ${kind} fetch failed: ${res.status} ${res.statusText}`);
     const batch = z.array(z.unknown()).parse(await res.json());
@@ -148,11 +159,15 @@ interface Session {
 
 /** Log in to the blog API; capture the session cookie + CSRF token. */
 async function login(apiUrl: string, username: string, password: string): Promise<Session> {
-  const res = await fetch(`${apiUrl}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username, password }),
-  });
+  const res = await withRetry(
+    () =>
+      fetch(`${apiUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      }),
+    { onRetry: warnRetry('Login') },
+  );
   if (!res.ok) throw new Error(`login failed: ${res.status}`);
   loginResponseSchema.parse(await res.json());
 
@@ -166,29 +181,53 @@ async function login(apiUrl: string, username: string, password: string): Promis
   return { cookie, csrf: csrfPair.slice('csrf='.length) };
 }
 
-/** Download image bytes and POST them to the upload endpoint; await `done`. */
-async function uploadImage(
-  apiUrl: string,
-  session: Session,
-  src: string,
-): Promise<string> {
+/** Fetch the original image bytes from the WP source. */
+async function downloadImage(src: string): Promise<{ bytes: Uint8Array<ArrayBuffer>; mime: string }> {
   const dl = await fetch(src);
   if (!dl.ok) throw new Error(`image download failed: ${src} (${dl.status})`);
   const mime = dl.headers.get('content-type') ?? 'application/octet-stream';
   const bytes = new Uint8Array(await dl.arrayBuffer());
-  const filename = src.split('/').pop() || 'image';
+  return { bytes, mime };
+}
 
+/** POST image bytes to the upload endpoint, returning the accepted ids. */
+async function postUpload(
+  apiUrl: string,
+  session: Session,
+  bytes: Uint8Array<ArrayBuffer>,
+  mime: string,
+  filename: string,
+): Promise<{ uploadId: string; imageId: string }> {
   const form = new FormData();
   form.append('file', new Blob([bytes], { type: mime }), filename);
-
   const res = await fetch(`${apiUrl}/api/images/upload`, {
     method: 'POST',
     headers: { cookie: session.cookie, 'x-csrf-token': session.csrf },
     body: form,
   });
   if (res.status !== 202) throw new Error(`upload failed: ${res.status}`);
-  const { uploadId, imageId } = uploadAcceptedSchema.parse(await res.json());
-  await awaitUpload(apiUrl, session, uploadId);
+  return uploadAcceptedSchema.parse(await res.json());
+}
+
+/**
+ * Download an image and re-upload it, awaiting the transcode. Each network step
+ * is retried independently with backoff so a transient `fetch failed` mid-run
+ * self-heals instead of aborting the whole migration. The steps are split (not
+ * one wrapped block) so a retry never re-downloads bytes that already uploaded.
+ */
+async function uploadImage(apiUrl: string, session: Session, src: string): Promise<string> {
+  const { bytes, mime } = await withRetry(() => downloadImage(src), {
+    onRetry: warnRetry(`Download ${src}`),
+  });
+  const filename = src.split('/').pop() || 'image';
+
+  const { uploadId, imageId } = await withRetry(
+    () => postUpload(apiUrl, session, bytes, mime, filename),
+    { onRetry: warnRetry(`Upload ${src}`) },
+  );
+  await withRetry(() => awaitUpload(apiUrl, session, uploadId), {
+    onRetry: warnRetry(`Fortschritt ${src}`),
+  });
   return imageId;
 }
 
@@ -221,15 +260,19 @@ async function createPost(
   session: Session,
   body: unknown,
 ): Promise<string> {
-  const res = await fetch(`${apiUrl}/api/posts`, {
-    method: 'POST',
-    headers: {
-      cookie: session.cookie,
-      'x-csrf-token': session.csrf,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  const res = await withRetry(
+    () =>
+      fetch(`${apiUrl}/api/posts`, {
+        method: 'POST',
+        headers: {
+          cookie: session.cookie,
+          'x-csrf-token': session.csrf,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      }),
+    { onRetry: warnRetry('Beitrag anlegen') },
+  );
   if (res.status !== 201) throw new Error(`post create failed: ${res.status}`);
   return postCreatedSchema.parse(await res.json()).post.id;
 }
