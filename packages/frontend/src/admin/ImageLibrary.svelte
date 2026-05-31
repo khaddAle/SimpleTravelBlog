@@ -12,6 +12,8 @@
   let loading = $state(true);
   let usage = $state<Record<string, PostRef[]>>({});
   let blocked = $state<{ filename: string; posts: PostRef[] } | null>(null);
+  let unusedPrompt = $state<{ count: number } | null>(null);
+  let bulkBusy = $state(false);
 
   const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
 
@@ -55,6 +57,21 @@
   function resetToFirstPage(): void {
     page = 1;
   }
+
+  async function promptDeleteUnused(): Promise<void> {
+    unusedPrompt = { count: await api.unusedImageCount() };
+  }
+
+  async function confirmDeleteUnused(): Promise<void> {
+    bulkBusy = true;
+    try {
+      await api.deleteUnusedImages();
+      unusedPrompt = null;
+      await load();
+    } finally {
+      bulkBusy = false;
+    }
+  }
 </script>
 
 <AdminLayout>
@@ -72,7 +89,33 @@
       <input type="checkbox" bind:checked={orphansOnly} onchange={resetToFirstPage} />
       Nur unbenutzte
     </label>
+    <button type="button" class="bulk" onclick={promptDeleteUnused}>Unbenutzte löschen</button>
   </div>
+
+  {#if unusedPrompt}
+    <div class="confirm" role="dialog" aria-modal="true" aria-label="Unbenutzte Bilder löschen">
+      {#if unusedPrompt.count === 0}
+        <p>Es gibt keine unbenutzten Bilder.</p>
+        <div class="confirm-actions">
+          <button type="button" onclick={() => (unusedPrompt = null)}>Schließen</button>
+        </div>
+      {:else}
+        <p>
+          <strong>{unusedPrompt.count}</strong> unbenutzte
+          {unusedPrompt.count === 1 ? 'Bild wird' : 'Bilder werden'} unwiderruflich gelöscht.
+          Fortfahren?
+        </p>
+        <div class="confirm-actions">
+          <button type="button" disabled={bulkBusy} onclick={() => (unusedPrompt = null)}>
+            Abbrechen
+          </button>
+          <button type="button" class="danger" disabled={bulkBusy} onclick={confirmDeleteUnused}>
+            Löschen
+          </button>
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   {#if blocked}
     <div class="blocked" role="alert">
@@ -162,5 +205,26 @@
   .usage {
     font-size: 0.8rem;
     color: #4a5568;
+  }
+  .bulk {
+    margin-left: auto;
+  }
+  .confirm {
+    border: 1px solid #f6ad55;
+    background: #fffaf0;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+  }
+  .confirm-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .confirm-actions .danger {
+    background: #e53e3e;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 0.4rem 0.9rem;
   }
 </style>

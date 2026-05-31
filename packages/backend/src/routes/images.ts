@@ -159,6 +159,33 @@ export function registerImageRoutes(app: FastifyInstance, ctx: RouteContext): vo
     return { images: images.map(toImageDto), page, pageSize, total };
   });
 
+  /** How many images are currently unused — drives the bulk-delete confirm. */
+  app.get('/api/images/unused/count', auth, async () => {
+    const used = await imageIdsInUse();
+    const count = await Image.countDocuments({ shortId: { $nin: [...used] } });
+    return { count };
+  });
+
+  /**
+   * Delete every unused image in one call. The unused set is recomputed here
+   * (not taken from a prior count) so it stays authoritative even if posts
+   * changed since the confirm dialog was shown. Storage objects are removed
+   * before the DB record, matching the single-delete path; a partial failure
+   * is safely idempotent on re-run.
+   */
+  app.post('/api/images/unused/delete', mutate, async () => {
+    const used = await imageIdsInUse();
+    const unused = await Image.find({ shortId: { $nin: [...used] } }).lean();
+    let deleted = 0;
+    for (const image of unused) {
+      await storage.deleteObject(image.displayKey);
+      await storage.deleteObject(image.thumbKey);
+      await Image.deleteOne({ _id: image._id });
+      deleted += 1;
+    }
+    return { deleted };
+  });
+
   app.get<{ Params: { shortId: string } }>(
     '/api/images/:shortId/usage',
     auth,

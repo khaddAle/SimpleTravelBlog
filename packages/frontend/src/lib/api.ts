@@ -227,6 +227,19 @@ export const api = {
   async deleteImage(id: string): Promise<void> {
     await request<void>(`/api/images/${id}`, { method: 'DELETE', csrf: true });
   },
+  /** How many images are currently unused (for the bulk-delete confirm). */
+  async unusedImageCount(): Promise<number> {
+    return (await request<{ count: number }>('/api/images/unused/count')).count;
+  },
+  /** Delete every unused image; returns how many were removed. */
+  async deleteUnusedImages(): Promise<number> {
+    return (
+      await request<{ deleted: number }>('/api/images/unused/delete', {
+        method: 'POST',
+        csrf: true,
+      })
+    ).deleted;
+  },
 
   // --- users (admin) ---
   async listUsers(): Promise<UserListItem[]> {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import type { ImageDto } from '@stb/shared';
 import { auth } from '../lib/auth.svelte.js';
@@ -69,5 +69,42 @@ describe('ImageLibrary', () => {
     render(ImageLibrary);
     await user.click(await screen.findByRole('button', { name: 'Verwendung' }));
     await waitFor(() => expect(screen.getByText('Berge')).toBeInTheDocument());
+  });
+
+  it('asks to confirm and shows the count before deleting unused images', async () => {
+    const user = userEvent.setup();
+    const count = vi.spyOn(api, 'unusedImageCount').mockResolvedValue(7);
+    render(ImageLibrary);
+    await user.click(await screen.findByRole('button', { name: 'Unbenutzte löschen' }));
+    expect(count).toHaveBeenCalled();
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('7');
+  });
+
+  it('bulk-deletes unused images after confirming and reloads', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'unusedImageCount').mockResolvedValue(7);
+    const del = vi.spyOn(api, 'deleteUnusedImages').mockResolvedValue(7);
+    const list = vi.spyOn(api, 'listImages');
+    render(ImageLibrary);
+    await user.click(await screen.findByRole('button', { name: 'Unbenutzte löschen' }));
+    const dialog = await screen.findByRole('dialog');
+    const callsBefore = list.mock.calls.length;
+    await user.click(within(dialog).getByRole('button', { name: 'Löschen' }));
+    expect(del).toHaveBeenCalled();
+    // List reloads after the bulk delete.
+    await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(callsBefore));
+  });
+
+  it('cancels the bulk-delete confirm without deleting', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'unusedImageCount').mockResolvedValue(7);
+    const del = vi.spyOn(api, 'deleteUnusedImages').mockResolvedValue(7);
+    render(ImageLibrary);
+    await user.click(await screen.findByRole('button', { name: 'Unbenutzte löschen' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
+    expect(del).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });

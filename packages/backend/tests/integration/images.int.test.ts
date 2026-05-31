@@ -223,6 +223,44 @@ describe('images integration', () => {
     expect(blocked.body.error).toBe('image_in_use');
   });
 
+  it('counts unused images (excluding referenced, cover and background)', async () => {
+    const used = await uploadImage('used.jpg');
+    await uploadImage('orphan1.jpg');
+    await uploadImage('orphan2.jpg');
+    await postWithImage(used);
+
+    const res = await auth.agent.get('/api/images/unused/count');
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+  });
+
+  it('bulk-deletes only the unused images and recomputes freshly', async () => {
+    const used = await uploadImage('used.jpg');
+    const orphan1 = await uploadImage('orphan1.jpg');
+    const orphan2 = await uploadImage('orphan2.jpg');
+    await postWithImage(used);
+
+    const del = await auth.agent
+      .post('/api/images/unused/delete')
+      .set('x-csrf-token', auth.csrf);
+    expect(del.status).toBe(200);
+    expect(del.body.deleted).toBe(2);
+
+    // Both orphans' objects removed, the referenced one untouched.
+    expect(storage.deletes).toContain(`posts/${orphan1}-display.webp`);
+    expect(storage.deletes).toContain(`posts/${orphan2}-thumb.webp`);
+    expect(storage.deletes).not.toContain(`posts/${used}-display.webp`);
+
+    const remaining = await auth.agent.get('/api/images');
+    expect(remaining.body.images.map((i: { id: string }) => i.id)).toEqual([used]);
+  });
+
+  it('requires CSRF to bulk-delete unused images', async () => {
+    await uploadImage('orphan.jpg');
+    const noCsrf = await auth.agent.post('/api/images/unused/delete');
+    expect(noCsrf.status).toBe(403);
+  });
+
   it('serves both public image variants and 404s unknown ones', async () => {
     const imageId = await uploadImage();
 
