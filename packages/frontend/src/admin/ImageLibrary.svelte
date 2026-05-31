@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SvelteSet } from 'svelte/reactivity';
   import type { ImageDto } from '@stb/shared';
   import { api, ApiError, type PostRef } from '../lib/api.js';
   import { formatDate } from '../lib/dates.js';
@@ -19,7 +20,9 @@
   let loading = $state(true);
 
   let usage = $state<Record<string, PostRef[]>>({});
-  let whereOpen = $state<Set<string>>(new Set());
+  // SvelteSet is reactive, so the template's whereOpen.has(...) tracks mutations
+  // directly — no clone-and-reassign needed.
+  const whereOpen = new SvelteSet<string>();
   let blocked = $state<{ filename: string; posts: PostRef[] } | null>(null);
 
   let unusedPrompt = $state<{ count: number } | null>(null);
@@ -80,14 +83,12 @@
   }
 
   async function toggleWhere(id: string): Promise<void> {
-    const next = new Set(whereOpen);
-    if (next.has(id)) {
-      next.delete(id);
+    if (whereOpen.has(id)) {
+      whereOpen.delete(id);
     } else {
-      next.add(id);
+      whereOpen.add(id);
       if (!(id in usage)) usage = { ...usage, [id]: await api.imageUsage(id) };
     }
-    whereOpen = next;
   }
 
   async function remove(image: ImageDto): Promise<void> {
