@@ -9,7 +9,12 @@ vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
 
 import PostList from './PostList.svelte';
 
-function post(id: string, title: string, status: PostDto['status']): PostDto {
+function post(
+  id: string,
+  title: string,
+  status: PostDto['status'],
+  extra: Partial<PostDto> = {},
+): PostDto {
   return {
     id,
     title,
@@ -22,6 +27,7 @@ function post(id: string, title: string, status: PostDto['status']): PostDto {
     status,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
+    ...extra,
   };
 }
 
@@ -70,5 +76,24 @@ describe('PostList', () => {
     vi.spyOn(api, 'listPosts').mockResolvedValue([]);
     render(PostList);
     expect(await screen.findByText('Noch keine Beiträge.')).toBeInTheDocument();
+  });
+
+  it('shows a cover thumbnail when the post has one', async () => {
+    vi.spyOn(api, 'listPosts').mockResolvedValue([post('p1', 'Berge', 'published', { coverImageId: 'cov1' })]);
+    render(PostList);
+    await screen.findByRole('link', { name: 'Berge' });
+    const thumb = document.querySelector('img');
+    expect(thumb).not.toBeNull();
+    expect(thumb!.getAttribute('src')).toContain('cov1');
+  });
+
+  it('shows the place and country in the row meta', async () => {
+    vi.spyOn(api, 'listPosts').mockResolvedValue([
+      post('p1', 'Berge', 'published', { placeName: 'Zugspitze', country: 'DE' }),
+    ]);
+    render(PostList);
+    await screen.findByRole('link', { name: 'Berge' });
+    expect(screen.getByText(/Zugspitze/)).toBeInTheDocument();
+    expect(screen.getByText(/Deutschland/)).toBeInTheDocument();
   });
 });
