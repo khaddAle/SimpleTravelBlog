@@ -36,8 +36,10 @@ const warnRetry =
  *     --api-url=http://localhost:4000 --username=admin --password=… \
  *     --default-country=DE --default-place=Berlin
  *
- * Tuning flags: `--throttle-ms=N` (gap between uploads, default 250) eases load
- * on the Pi; `--warn-image-bytes=N` sets the size at which the report flags an
+ * Tuning flags: `--throttle-ms=N` (gap between uploads, default 50) paces the
+ * sequential uploads; the Pi has ample headroom (peaks <0.4 of its 1-core limit
+ * with zero CPU throttling during a run), so this is mostly courtesy to the
+ * source WP host's downloads — raise it to be gentler, lower toward 0 for speed; `--warn-image-bytes=N` sets the size at which the report flags an
  * image (so you can raise the server's MAX_UPLOAD_BYTES before a live run);
  * `--gallery-min=N` (default 3, floored at 2) sets how many consecutive
  * caption-less images collapse into a single gallery block.
@@ -105,7 +107,7 @@ function parseArgs(argv: string[]): Args {
     out: flags.get('out') ?? 'migration-report.json',
     saveCorpus: flags.get('save-corpus'),
     limit: limit !== undefined && Number.isFinite(limit) ? limit : undefined,
-    throttleMs: throttle !== undefined && Number.isFinite(throttle) ? Math.max(0, throttle) : 250,
+    throttleMs: throttle !== undefined && Number.isFinite(throttle) ? Math.max(0, throttle) : 50,
     map,
   };
 }
