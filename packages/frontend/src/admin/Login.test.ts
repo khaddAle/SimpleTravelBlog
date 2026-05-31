@@ -47,4 +47,13 @@ describe('Login', () => {
     await user.click(screen.getByRole('button', { name: 'Anmelden' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Zu viele Anmeldeversuche');
   });
+
+  it('shows the Redaktion brand and a link back to the public site', () => {
+    vi.spyOn(auth, 'login').mockResolvedValue({ id: 'u1', username: 'mum', role: 'admin' });
+    render(Login);
+    expect(screen.getByText('Redaktion')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Anmelden' })).toBeInTheDocument();
+    expect(screen.getByText(/Privater Bereich/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Zur Website/ })).toHaveAttribute('href', '#/');
+  });
 });
