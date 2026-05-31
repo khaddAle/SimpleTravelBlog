@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { auth } from '../lib/auth.svelte.js';
-import { api } from '../lib/api.js';
+import { api, ApiError } from '../lib/api.js';
 import { settings as branding } from '../lib/settings.svelte.js';
 
 vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
@@ -144,5 +144,58 @@ describe('Settings', () => {
     await screen.findByLabelText('Seitentitel');
     await user.click(screen.getByRole('button', { name: 'Speichern' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Speichern fehlgeschlagen.');
+  });
+
+  describe('change password', () => {
+    beforeEach(() => {
+      vi.spyOn(api, 'getSettings').mockResolvedValue({ siteTitle: 'Alt', accentColor: '#000000' });
+    });
+
+    async function fillPassword(
+      user: ReturnType<typeof userEvent.setup>,
+      old: string,
+      neu: string,
+      confirm: string,
+    ): Promise<void> {
+      await user.type(await screen.findByLabelText('Aktuelles Passwort'), old);
+      await user.type(screen.getByLabelText('Neues Passwort'), neu);
+      await user.type(screen.getByLabelText('Neues Passwort bestätigen'), confirm);
+    }
+
+    it('changes the password and confirms', async () => {
+      const user = userEvent.setup();
+      const change = vi.spyOn(api, 'changePassword').mockResolvedValue();
+      render(Settings);
+      await screen.findByLabelText('Seitentitel');
+      await fillPassword(user, 'old-secret', 'new-secret-1', 'new-secret-1');
+      await user.click(screen.getByRole('button', { name: 'Passwort ändern' }));
+      expect(change).toHaveBeenCalledWith('old-secret', 'new-secret-1', 'new-secret-1');
+      expect(await screen.findByText('Passwort geändert.')).toBeInTheDocument();
+    });
+
+    it('shows a precise message when the current password is wrong', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(api, 'changePassword').mockRejectedValue(
+        new ApiError(400, 'invalid_current_password', { error: 'invalid_current_password' }),
+      );
+      render(Settings);
+      await screen.findByLabelText('Seitentitel');
+      await fillPassword(user, 'wrong-old', 'new-secret-1', 'new-secret-1');
+      await user.click(screen.getByRole('button', { name: 'Passwort ändern' }));
+      expect(await screen.findByText('Das aktuelle Passwort ist falsch.')).toBeInTheDocument();
+    });
+
+    it('rejects a confirmation mismatch client-side without calling the API', async () => {
+      const user = userEvent.setup();
+      const change = vi.spyOn(api, 'changePassword').mockResolvedValue();
+      render(Settings);
+      await screen.findByLabelText('Seitentitel');
+      await fillPassword(user, 'old-secret', 'new-secret-1', 'mismatch-2');
+      await user.click(screen.getByRole('button', { name: 'Passwort ändern' }));
+      expect(change).not.toHaveBeenCalled();
+      expect(
+        await screen.findByText('Die neuen Passwörter stimmen nicht überein.'),
+      ).toBeInTheDocument();
+    });
   });
 });

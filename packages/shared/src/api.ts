@@ -42,6 +42,23 @@ export const userDtoSchema = z.object({
 });
 export type UserDto = z.infer<typeof userDtoSchema>;
 
+/** Self-service password change: current password + new password (twice). */
+export const changePasswordRequestSchema = z
+  .object({
+    oldPassword: z.string().min(1).max(1024),
+    newPassword: z.string().min(8).max(1024),
+    newPasswordConfirm: z.string().min(1).max(1024),
+  })
+  .refine((v) => v.newPassword === v.newPasswordConfirm, {
+    message: 'new passwords do not match',
+    path: ['newPasswordConfirm'],
+  })
+  .refine((v) => v.oldPassword !== v.newPassword, {
+    message: 'new password must differ from the old one',
+    path: ['newPassword'],
+  });
+export type ChangePasswordRequest = z.infer<typeof changePasswordRequestSchema>;
+
 // --- posts ---
 export const postMetadataSchema = z.object({
   title: z.string().min(1).max(200),

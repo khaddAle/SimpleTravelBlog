@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api } from '../lib/api.js';
+  import { api, ApiError } from '../lib/api.js';
   import { settings as branding } from '../lib/settings.svelte.js';
   import { imageUrl } from '../lib/images.js';
   import AdminLayout from './AdminLayout.svelte';
@@ -46,6 +46,52 @@
       saved = true;
     } catch {
       error = 'Speichern fehlgeschlagen.';
+    }
+  }
+
+  let oldPassword = $state('');
+  let newPassword = $state('');
+  let newPasswordConfirm = $state('');
+  let pwError = $state('');
+  let pwSaved = $state(false);
+  let pwBusy = $state(false);
+
+  async function changePassword(event: Event): Promise<void> {
+    event.preventDefault();
+    pwError = '';
+    pwSaved = false;
+    // Mirror the server's rules client-side for an immediate, precise hint.
+    if (newPassword.length < 8) {
+      pwError = 'Das neue Passwort muss mindestens 8 Zeichen lang sein.';
+      return;
+    }
+    if (newPassword !== newPasswordConfirm) {
+      pwError = 'Die neuen Passwörter stimmen nicht überein.';
+      return;
+    }
+    if (newPassword === oldPassword) {
+      pwError = 'Das neue Passwort muss sich vom alten unterscheiden.';
+      return;
+    }
+    pwBusy = true;
+    try {
+      await api.changePassword(oldPassword, newPassword, newPasswordConfirm);
+      pwSaved = true;
+      oldPassword = '';
+      newPassword = '';
+      newPasswordConfirm = '';
+    } catch (err) {
+      if (
+        err instanceof ApiError &&
+        err.status === 400 &&
+        (err.body as { error?: string } | undefined)?.error === 'invalid_current_password'
+      ) {
+        pwError = 'Das aktuelle Passwort ist falsch.';
+      } else {
+        pwError = 'Passwortänderung fehlgeschlagen.';
+      }
+    } finally {
+      pwBusy = false;
     }
   }
 </script>
@@ -97,6 +143,31 @@
 
       <button type="submit">Speichern</button>
     </form>
+
+    <section class="password">
+      <h2>Passwort ändern</h2>
+      <form class="settings" onsubmit={changePassword}>
+        {#if pwError}
+          <p role="alert" class="err">{pwError}</p>
+        {/if}
+        {#if pwSaved}
+          <p class="ok" role="status">Passwort geändert.</p>
+        {/if}
+        <label>
+          Aktuelles Passwort
+          <input type="password" aria-label="Aktuelles Passwort" bind:value={oldPassword} autocomplete="current-password" />
+        </label>
+        <label>
+          Neues Passwort
+          <input type="password" aria-label="Neues Passwort" bind:value={newPassword} autocomplete="new-password" />
+        </label>
+        <label>
+          Neues Passwort bestätigen
+          <input type="password" aria-label="Neues Passwort bestätigen" bind:value={newPasswordConfirm} autocomplete="new-password" />
+        </label>
+        <button type="submit" disabled={pwBusy}>Passwort ändern</button>
+      </form>
+    </section>
   {/if}
 
   {#if pickerOpen}
@@ -130,6 +201,15 @@
   }
   .ok {
     color: #2f855a;
+  }
+  .password {
+    margin-top: 2rem;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 1rem;
+  }
+  .password h2 {
+    font-size: 1.1rem;
+    margin: 0 0 0.5rem;
   }
   .bg-field {
     display: flex;

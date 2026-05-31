@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import { loginRequestSchema } from '@stb/shared';
+import { loginRequestSchema, changePasswordRequestSchema } from '@stb/shared';
 import type { Redis } from 'ioredis';
 import type { Config } from '../config.js';
 import type { AuthHooks } from '../auth/requireAuth.js';
 import { User } from '../db/models/User.js';
-import { verifyPassword } from '../auth/hash.js';
+import { verifyPassword, hashPassword } from '../auth/hash.js';
 import { createSession, destroySession } from '../redis/sessions.js';
 import {
   isLoginLimited,
@@ -88,6 +88,30 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
   app.get('/api/auth/me', { preHandler: hooks.requireAuth }, async (req) => {
     return { user: req.authUser };
   });
+
+  app.post(
+    '/api/auth/change-password',
+    { preHandler: [hooks.requireAuth, hooks.requireCsrf] },
+    async (req, reply) => {
+      const parsed = changePasswordRequestSchema.safeParse(req.body);
+      if (!parsed.success) throw app.httpErrors.badRequest('invalid password payload');
+
+      const user = await User.findById(req.authUser!.id);
+      if (!user) throw app.httpErrors.unauthorized('unknown user');
+
+      // The current password must match before we rotate it.
+      if (!(await verifyPassword(user.passwordHash, parsed.data.oldPassword))) {
+        reply.code(400);
+        return { error: 'invalid_current_password' };
+      }
+
+      user.passwordHash = await hashPassword(parsed.data.newPassword);
+      await user.save();
+      // Other sessions are intentionally left valid (see change-password
+      // decision); only the password hash changes.
+      return { ok: true };
+    },
+  );
 
   app.post(
     '/api/auth/logout',

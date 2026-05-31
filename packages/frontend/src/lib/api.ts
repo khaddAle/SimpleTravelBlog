@@ -144,6 +144,19 @@ export const api = {
     await request<void>('/api/auth/logout', { method: 'POST', csrf: true });
   },
 
+  /** Change the current user's password (current password + new password twice). */
+  async changePassword(
+    oldPassword: string,
+    newPassword: string,
+    newPasswordConfirm: string,
+  ): Promise<void> {
+    await request<{ ok: true }>('/api/auth/change-password', {
+      method: 'POST',
+      body: { oldPassword, newPassword, newPasswordConfirm },
+      csrf: true,
+    });
+  },
+
   /** Returns the current user, or null when not authenticated (401). */
   async me(): Promise<UserDto | null> {
     try {
