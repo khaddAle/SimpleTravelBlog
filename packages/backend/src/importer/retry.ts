@@ -14,6 +14,13 @@ export interface RetryOptions {
   sleep?: (ms: number) => Promise<void>;
   /** Called before each backoff wait with the error, attempt number, and delay. */
   onRetry?: (err: unknown, attempt: number, delayMs: number) => void;
+  /**
+   * Decide whether a given error is worth retrying. Return false to fail fast
+   * without further attempts — e.g. a deterministic failure (a corrupt image the
+   * transcoder will always reject) that retrying cannot fix. Defaults to retrying
+   * every error.
+   */
+  shouldRetry?: (err: unknown) => boolean;
 }
 
 const defaultSleep = (ms: number): Promise<void> =>
@@ -31,6 +38,7 @@ export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOptions = {}
     } catch (err) {
       lastErr = err;
       if (attempt === attempts) break;
+      if (opts.shouldRetry && !opts.shouldRetry(err)) break;
       const delayMs = baseDelayMs * 2 ** (attempt - 1);
       opts.onRetry?.(err, attempt, delayMs);
       await sleep(delayMs);

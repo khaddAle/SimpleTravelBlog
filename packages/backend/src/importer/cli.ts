@@ -223,6 +223,20 @@ async function login(apiUrl: string, username: string, password: string): Promis
   return { cookie, csrf: csrfPair.slice('csrf='.length) };
 }
 
+/**
+ * The server's pipeline reported a transcode failure for one image (e.g. a
+ * corrupt source the encoder rejects). Deterministic — re-sending the same bytes
+ * fails identically — so it is not retried; the image is skipped instead of
+ * aborting the whole run. Distinct from a network/stream failure, where the
+ * upload was already accepted and only our progress watch broke.
+ */
+class TranscodeFailedError extends Error {
+  constructor(message: string) {
+    super(`transcode failed: ${message}`);
+    this.name = 'TranscodeFailedError';
+  }
+}
+
 /** Fetch the original image bytes from the WP source. */
 async function downloadImage(src: string): Promise<{ bytes: Uint8Array<ArrayBuffer>; mime: string }> {
   const dl = await fetch(src);
@@ -267,9 +281,26 @@ async function uploadImage(apiUrl: string, session: Session, src: string): Promi
     () => postUpload(apiUrl, session, bytes, mime, filename),
     { onRetry: warnRetry(`Upload ${src}`) },
   );
-  await withRetry(() => awaitUpload(apiUrl, session, uploadId), {
-    onRetry: warnRetry(`Fortschritt ${src}`),
-  });
+
+  // Wait for the transcode to finish. Two failure modes, handled differently:
+  //  - A genuine transcode error (corrupt image) is deterministic, so it is not
+  //    retried; it propagates and the caller skips just this one image.
+  //  - A connection/stream failure (tunnel blip, edge 404) is not the image's
+  //    fault — the upload was already accepted (we hold its imageId) and the
+  //    pipeline runs server-side regardless — so we proceed with the id rather
+  //    than losing a good image to a network hiccup.
+  try {
+    await withRetry(() => awaitUpload(apiUrl, session, uploadId), {
+      onRetry: warnRetry(`Fortschritt ${src}`),
+      shouldRetry: (e) => !(e instanceof TranscodeFailedError),
+    });
+  } catch (err) {
+    if (err instanceof TranscodeFailedError) throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stdout.write(
+      `  ⚠ Fortschritt ${src}: nicht bestätigt (${msg}) — Bild wurde akzeptiert, fahre fort\n`,
+    );
+  }
   return imageId;
 }
 
@@ -291,7 +322,7 @@ async function awaitUpload(apiUrl: string, session: Session, uploadId: string): 
     const { events, rest } = drainSseEvents(buf);
     buf = rest;
     for (const event of events) {
-      if (event.type === 'error') throw new Error(`transcode failed: ${event.message ?? ''}`);
+      if (event.type === 'error') throw new TranscodeFailedError(event.message ?? '');
       if (event.type === 'done') return;
     }
   }
@@ -337,6 +368,8 @@ interface RunResult {
   created: { slug: string; id: string }[];
   uploaded: Record<string, string>;
   finalizeLosses: { slug: string; src: string }[];
+  /** Images that could not be uploaded after retries (skipped, not aborted). */
+  failedImages: { src: string; error: string }[];
 }
 
 async function runLive(args: Args, plan: ImportPlan): Promise<RunResult> {
@@ -356,6 +389,7 @@ async function runLive(args: Args, plan: ImportPlan): Promise<RunResult> {
   };
 
   const uploaded: Record<string, string> = {};
+  const failedImages: RunResult['failedImages'] = [];
   const total = plan.imageSources.length;
   const progress = createProgressTracker({ total, label: 'Bilder' });
   let done = 0;
@@ -373,13 +407,24 @@ async function runLive(args: Args, plan: ImportPlan): Promise<RunResult> {
       // transcode (no server-side concurrency cap) is not overwhelmed.
       if (!first) await sleep(args.throttleMs);
       first = false;
-      const imageId = await uploadImage(args.apiUrl, session, src);
-      uploaded[src] = imageId;
-      manifest[src] = imageId;
-      sinceFlush += 1;
-      if (sinceFlush >= 25) {
-        await persistManifest();
-        sinceFlush = 0;
+      try {
+        const imageId = await uploadImage(args.apiUrl, session, src);
+        uploaded[src] = imageId;
+        manifest[src] = imageId;
+        sinceFlush += 1;
+        if (sinceFlush >= 25) {
+          await persistManifest();
+          sinceFlush = 0;
+        }
+      } catch (err) {
+        // One image that cannot be uploaded (a corrupt source the transcoder
+        // rejects, or a network step that exhausted its retries) must not abort
+        // the whole migration. Record it and continue; the block referencing it
+        // is dropped by finalizeBlocks (recorded as an unresolved-image loss),
+        // and it stays out of the manifest so a later run can retry it.
+        const msg = err instanceof Error ? err.message : String(err);
+        failedImages.push({ src, error: msg });
+        process.stdout.write(`  ⚠ Bild übersprungen: ${src} — ${msg}\n`);
       }
     }
     done += 1;
@@ -407,7 +452,13 @@ async function runLive(args: Args, plan: ImportPlan): Promise<RunResult> {
     process.stdout.write(`  + ${m.slug} → ${id}\n`);
   }
 
-  return { plan, created, uploaded, finalizeLosses };
+  if (failedImages.length > 0) {
+    process.stdout.write(
+      `\n⚠ ${failedImages.length} Bild(er) konnten nicht importiert werden (siehe Bericht: failedImages).\n`,
+    );
+  }
+
+  return { plan, created, uploaded, finalizeLosses, failedImages };
 }
 
 async function main(): Promise<void> {
@@ -459,6 +510,7 @@ async function main(): Promise<void> {
     report.created = result.created;
     report.uploaded = result.uploaded;
     report.finalizeLosses = result.finalizeLosses;
+    report.failedImages = result.failedImages;
   }
 
   await mkdir(path.dirname(path.resolve(args.out)), { recursive: true });

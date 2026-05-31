@@ -42,6 +42,32 @@ describe('withRetry', () => {
     expect(delays).toEqual([500, 1000, 2000]);
   });
 
+  it('does not retry when shouldRetry returns false (fail fast)', async () => {
+    const onRetry = vi.fn();
+    const fn = vi.fn(() => Promise.reject(new Error('deterministic')));
+    await expect(
+      withRetry(fn, { sleep: noSleep, shouldRetry: () => false, onRetry }),
+    ).rejects.toThrow('deterministic');
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+
+  it('retries selectively per error: a transient blip retries, a fatal stops', async () => {
+    let calls = 0;
+    const fn = vi.fn(() => {
+      calls += 1;
+      return Promise.reject(calls === 1 ? new Error('transient') : new Error('FATAL'));
+    });
+    await expect(
+      withRetry(fn, {
+        sleep: noSleep,
+        shouldRetry: (e) => (e as Error).message !== 'FATAL',
+      }),
+    ).rejects.toThrow('FATAL');
+    // First (transient) is retried; the second throws FATAL, which stops immediately.
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
   it('notifies onRetry for each retry with the attempt number and delay', async () => {
     const onRetry = vi.fn();
     const fn = vi.fn(() => Promise.reject(new Error('x')));
