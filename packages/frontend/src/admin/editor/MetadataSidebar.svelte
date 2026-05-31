@@ -76,8 +76,10 @@
   }
 </script>
 
-<aside class="metadata">
-  <label>
+<div class="panel metadata">
+  <h3>Metadaten</h3>
+
+  <label class="fld">
     Titel
     <input
       type="text"
@@ -89,7 +91,7 @@
     />
   </label>
 
-  <label>
+  <label class="fld">
     Untertitel
     <input
       type="text"
@@ -98,7 +100,7 @@
     />
   </label>
 
-  <label>
+  <label class="fld">
     Datum
     <input
       type="date"
@@ -110,7 +112,7 @@
     />
   </label>
 
-  <label>
+  <label class="fld">
     <span class="req">Land (ISO, z. B. DE)</span>
     <input
       type="text"
@@ -124,7 +126,7 @@
     />
   </label>
 
-  <label>
+  <label class="fld">
     <span class="req">Ortsname</span>
     <input
       type="text"
@@ -137,7 +139,7 @@
     />
   </label>
 
-  <label>
+  <label class="fld">
     Reise
     <select value={value.tripId ?? ''} onchange={(e) => setTrip(e.currentTarget.value)}>
       <option value="">— keine —</option>
@@ -147,76 +149,110 @@
     </select>
   </label>
 
-  <div class="cover-field">
-    <span class="cover-label">Titelbild</span>
+  <div class="fld cover-field">
+    <span class="fld-label">Titelbild</span>
     {#if value.coverImageId}
       <img class="cover-thumb" src={imageUrl(value.coverImageId, 'thumb')} alt="" />
     {/if}
     <div class="cover-actions">
-      <button type="button" onclick={chooseCover}>
+      <button type="button" class="tb-btn" onclick={chooseCover}>
         {value.coverImageId ? 'Bild ändern' : 'Bild wählen'}
       </button>
       {#if value.coverImageId}
-        <button type="button" onclick={clearCover}>Entfernen</button>
+        <button type="button" class="tb-btn" onclick={clearCover}>Entfernen</button>
       {/if}
     </div>
   </div>
 
-  <div class="map-field">
-    <span class="map-label">Ort auf der Karte</span>
+  <div class="fld map-field">
+    <span class="fld-label">Ort auf der Karte</span>
     <MapPicker
       lat={value.lat}
       lng={value.lng}
       onChange={(lat, lng) => void handleMapChange(lat, lng)}
     />
   </div>
-</aside>
+</div>
 
 <style>
-  .metadata {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-frame-sm);
+    padding: 18px;
   }
-  label {
+  .panel h3 {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 0 0 14px;
+  }
+  .fld {
     display: flex;
     flex-direction: column;
-    font-size: 0.85rem;
+    gap: 6px;
+    margin-top: 14px;
+  }
+  .fld,
+  .fld-label {
+    font-size: 11px;
     font-weight: 600;
-    color: #4a5568;
-    gap: 0.25rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--faint);
   }
-  input,
-  select {
+  .fld input,
+  .fld select {
     font: inherit;
+    font-size: 14px;
     font-weight: 400;
-    padding: 0.4rem;
+    letter-spacing: normal;
+    text-transform: none;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 10px 11px;
+    border-radius: 6px;
+    appearance: none;
   }
-  .map-label,
-  .cover-label {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: #4a5568;
+  .fld input:focus,
+  .fld select:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--surface);
   }
   /* Visual required marker; rendered via CSS so it stays out of the input's
      accessible name (label queries keep matching "Ortsname"). */
   .req::after {
     content: ' *';
-    color: #c53030;
+    color: #b4452f;
   }
-  .cover-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
+  .tb-btn {
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: normal;
+    text-transform: none;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 9px 13px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .tb-btn:hover {
+    border-color: var(--accent);
   }
   .cover-thumb {
     width: 100%;
     height: 120px;
     object-fit: cover;
-    border-radius: 6px;
+    border: 1px solid var(--keyline);
   }
   .cover-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: 8px;
   }
 </style>

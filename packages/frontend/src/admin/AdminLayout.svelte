@@ -8,7 +8,11 @@
   /** Which admin section is active, so its nav link gets `aria-current="page"`. */
   type Section = 'beitraege' | 'bilder' | 'nutzer' | 'einstellungen';
 
-  let { children, current }: { children?: Snippet; current?: Section } = $props();
+  let {
+    children,
+    current,
+    actions,
+  }: { children?: Snippet; current?: Section; actions?: Snippet } = $props();
 
   // Veto a nav-link click when a registered guard (e.g. the post editor with
   // unsaved edits) says the user should confirm first.
@@ -51,6 +55,9 @@
         </a>
       </nav>
       <span class="spacer"></span>
+      {#if actions}
+        <div class="bar-actions">{@render actions()}</div>
+      {/if}
       {#if auth.user}
         <span class="who">{auth.user.username}</span>
       {/if}
@@ -109,6 +116,11 @@
   }
   .spacer {
     flex: 1;
+  }
+  .bar-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
   }
   .who {
     font-size: 13px;

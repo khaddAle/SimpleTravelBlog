@@ -23,6 +23,9 @@
     lng: 10.4515,
   });
   let blocks = $state<Block[]>([]);
+  // Saved status, seeded from the loaded post (new posts start as a draft);
+  // drives the status pill in the bar.
+  let status = $state<'draft' | 'published'>('draft');
   // Images already placed in this (possibly unsaved) post — hidden from the
   // "Nur unbenutzte" picker so freshly-selected images stop showing as unused.
   const usedImageIds = $derived(collectImageIds(blocks, metadata.coverImageId));
@@ -54,6 +57,7 @@
       trips = await api.listTrips();
       if (editId) {
         const post = await api.getPost(editId);
+        status = post.status;
         metadata = {
           title: post.title,
           postDate: post.postDate,
@@ -147,7 +151,7 @@
     };
   }
 
-  async function save(status: 'draft' | 'published'): Promise<void> {
+  async function save(next: 'draft' | 'published'): Promise<void> {
     error = '';
     const missing = missingRequiredFields();
     if (missing.length > 0) {
@@ -157,12 +161,13 @@
     saving = true;
     try {
       if (editId) {
-        const body: UpdatePostRequest = { ...buildBody(), status };
+        const body: UpdatePostRequest = { ...buildBody(), status: next };
         await api.updatePost(editId, body);
       } else {
         const created = await api.createPost(buildBody());
-        if (status === 'published') await api.updatePost(created.id, { status: 'published' });
+        if (next === 'published') await api.updatePost(created.id, { status: 'published' });
       }
+      status = next;
       // Saved state is now the baseline, so leaving afterwards isn't guarded.
       initialSnapshot = JSON.stringify({ metadata, blocks });
       push('/admin');
@@ -179,29 +184,55 @@
   }
 </script>
 
-<AdminLayout>
-  <h1>{editId ? 'Beitrag bearbeiten' : 'Neuer Beitrag'}</h1>
+{#snippet barActions()}
+  {#if !loading}
+    {#if isDirty}
+      <span class="saved">Ungespeicherte Änderungen</span>
+    {/if}
+    <span class="pill {status === 'published' ? 'pub' : 'draft'}">
+      {status === 'published' ? 'Veröffentlicht' : 'Entwurf'}
+    </span>
+    {#if editId}
+      <a class="btn ghost preview" href={`#/beitrag/${editId}`} target="_blank" rel="noopener">
+        Vorschau
+      </a>
+    {/if}
+  {/if}
+{/snippet}
 
+<AdminLayout current="beitraege" actions={barActions}>
   {#if loading}
-    <p>Lädt…</p>
+    <p class="loading">Lädt…</p>
   {:else}
     {#if error}
       <p role="alert" class="err">{error}</p>
     {/if}
-    <div class="editor-grid">
-      <section class="content">
-        <h2>Inhalt</h2>
+    <div class="editor-wrap">
+      <div class="sheet">
         <BlockEditor {blocks} onChange={(next) => (blocks = next)} {pickImage} {pickGallery} />
-      </section>
-      <MetadataSidebar {metadata} {trips} onChange={(next) => (metadata = next)} {pickImage} />
-    </div>
-    <div class="save-bar">
-      <button type="button" disabled={saving} onclick={() => save('draft')}>
-        Entwurf speichern
-      </button>
-      <button type="button" disabled={saving} onclick={() => save('published')}>
-        Veröffentlichen
-      </button>
+      </div>
+      <aside class="side">
+        <div class="panel">
+          <h3>Status</h3>
+          <button
+            type="button"
+            class="btn primary pub-btn"
+            disabled={saving}
+            onclick={() => save('published')}
+          >
+            Veröffentlichen
+          </button>
+          <button
+            type="button"
+            class="btn draft-btn"
+            disabled={saving}
+            onclick={() => save('draft')}
+          >
+            Entwurf speichern
+          </button>
+        </div>
+        <MetadataSidebar {metadata} {trips} onChange={(next) => (metadata = next)} {pickImage} />
+      </aside>
     </div>
   {/if}
 
@@ -222,18 +253,98 @@
 </AdminLayout>
 
 <style>
-  .editor-grid {
+  /* bar actions (rendered into AdminLayout's bar via the snippet) */
+  .saved {
+    font-size: 12px;
+    color: var(--faint);
+  }
+  .pill {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 4px 9px;
+    border-radius: 100px;
+  }
+  .pill.draft {
+    background: #f3e6c8;
+    color: #8a6a1f;
+  }
+  .pill.pub {
+    background: #cfe8d6;
+    color: #1f7a43;
+  }
+  .preview {
+    padding: 8px 13px;
+    font-size: 13px;
+  }
+
+  .loading {
+    color: var(--muted);
+  }
+  .editor-wrap {
     display: grid;
     grid-template-columns: 1fr 320px;
-    gap: 1.5rem;
+    gap: 34px;
+    align-items: start;
   }
-  .save-bar {
-    margin-top: 1.5rem;
+  .sheet {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-frame);
+    padding: 18px 20px;
+  }
+  .side {
+    position: sticky;
+    top: 84px;
     display: flex;
-    gap: 0.75rem;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-frame-sm);
+    padding: 18px;
+  }
+  .panel h3 {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 0 0 14px;
+  }
+  .pub-btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .draft-btn {
+    width: 100%;
+    justify-content: center;
+    margin-top: 10px;
   }
   .err {
-    color: #c53030;
+    color: #b4452f;
+    background: #f7e4df;
+    padding: 11px 14px;
+    margin: 0 0 20px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  @media (max-width: 920px) {
+    .editor-wrap {
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+    .side {
+      position: static;
+    }
+  }
+  @media (max-width: 640px) {
+    .saved {
+      display: none;
+    }
   }
   .modal {
     position: fixed;

@@ -122,6 +122,20 @@ describe('PostEditor (create)', () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it('shows an Entwurf status pill and no preview link for a new post', async () => {
+    render(PostEditor, {});
+    await screen.findByLabelText('Titel');
+    expect(screen.getByText('Entwurf', { selector: '.pill' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Vorschau' })).toBeNull();
+  });
+
+  it('flags unsaved changes in the bar after an edit', async () => {
+    const user = userEvent.setup();
+    render(PostEditor, {});
+    await fillRequiredMeta(user);
+    expect(await screen.findByText('Ungespeicherte Änderungen')).toBeInTheDocument();
+  });
+
   it('shows an error when saving fails', async () => {
     const user = userEvent.setup();
     vi.spyOn(api, 'createPost').mockRejectedValue(new Error('boom'));
@@ -182,6 +196,14 @@ describe('PostEditor (edit)', () => {
     vi.spyOn(api, 'getPost').mockResolvedValue(samplePost());
     render(PostEditor, { params: { id: 'p1' } });
     expect(((await screen.findByLabelText('Titel')) as HTMLInputElement).value).toBe('Berge');
+  });
+
+  it('shows a published status pill and a preview link when editing', async () => {
+    vi.spyOn(api, 'getPost').mockResolvedValue({ ...samplePost(), status: 'published' });
+    render(PostEditor, { params: { id: 'p1' } });
+    await screen.findByLabelText('Titel');
+    expect(screen.getByText('Veröffentlicht', { selector: '.pill' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Vorschau' })).toHaveAttribute('href', '#/beitrag/p1');
   });
 
   it('saves edits with updatePost', async () => {
