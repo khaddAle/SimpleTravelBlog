@@ -29,7 +29,9 @@ import { drainSseEvents } from './sse.js';
  *
  * Tuning flags: `--throttle-ms=N` (gap between uploads, default 250) eases load
  * on the Pi; `--warn-image-bytes=N` sets the size at which the report flags an
- * image (so you can raise the server's MAX_UPLOAD_BYTES before a live run).
+ * image (so you can raise the server's MAX_UPLOAD_BYTES before a live run);
+ * `--gallery-min=N` (default 3, floored at 2) sets how many consecutive
+ * caption-less images collapse into a single gallery block.
  */
 
 interface Args {
@@ -71,11 +73,13 @@ function parseArgs(argv: string[]): Args {
   const lat = num('default-lat');
   const lng = num('default-lng');
   const warnBytes = num('warn-image-bytes');
+  const galleryMin = num('gallery-min');
   if (country !== undefined) map.defaultCountry = country;
   if (place !== undefined) map.defaultPlaceName = place;
   if (lat !== undefined) map.defaultLat = lat;
   if (lng !== undefined) map.defaultLng = lng;
   if (warnBytes !== undefined && Number.isFinite(warnBytes)) map.warnImageBytes = warnBytes;
+  if (galleryMin !== undefined && Number.isFinite(galleryMin)) map.galleryThreshold = galleryMin;
   if (bare.has('as-draft')) map.asDraft = true;
 
   const limit = num('limit');

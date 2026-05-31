@@ -69,9 +69,16 @@ export interface PendingImageBlock {
   caption?: string;
 }
 
+/** A gallery whose member source URLs are known but not yet resolved to ids. */
+export interface PendingGalleryBlock {
+  type: 'gallery';
+  srcs: string[];
+  caption?: string;
+}
+
 /**
  * A mapped block before image re-upload. Text blocks are already in their final
- * shape; image blocks are {@link PendingImageBlock} until {@link finalizeBlocks}
+ * shape; image/gallery blocks carry source URLs until {@link finalizeBlocks}
  * swaps each `src` for the imageId returned by re-uploading the bytes.
  */
 export type ImportBlock =
@@ -79,7 +86,8 @@ export type ImportBlock =
   | { type: 'subtitle'; text: string }
   | { type: 'quote'; text: string; source?: string }
   | { type: 'divider' }
-  | PendingImageBlock;
+  | PendingImageBlock
+  | PendingGalleryBlock;
 
 export type ImportLossKind =
   | 'unsupported_element'
@@ -210,9 +218,55 @@ export function htmlToBlocks(
 export function collectImageSrcs(blocks: ImportBlock[]): string[] {
   const seen = new Set<string>();
   for (const b of blocks) {
-    if (b.type === 'image' && !seen.has(b.src)) seen.add(b.src);
+    if (b.type === 'image') seen.add(b.src);
+    else if (b.type === 'gallery') for (const s of b.srcs) seen.add(s);
   }
   return [...seen];
+}
+
+/** Minimum run of consecutive images that collapses into a gallery. */
+export const GALLERY_MIN_RUN_DEFAULT = 3;
+/** Per-gallery image cap; mirrors `galleryBlockSchema`'s max in @stb/shared. */
+export const GALLERY_MAX_IMAGES = 24;
+
+/**
+ * Collapse maximal runs of `>= minRun` consecutive caption-less image blocks
+ * into gallery blocks. A captioned image stays standalone (its caption would be
+ * lost in a single-caption gallery) and breaks the run, as does any non-image
+ * block. Runs longer than {@link GALLERY_MAX_IMAGES} are split into multiple
+ * galleries; a trailing chunk shorter than `minRun` is emitted as individual
+ * image blocks rather than a tiny gallery. `minRun` is floored at 2 (a one-image
+ * gallery is never useful, and 0/1 would not terminate / would wrap singles).
+ */
+export function coalesceImageRuns(
+  blocks: ImportBlock[],
+  minRun: number = GALLERY_MIN_RUN_DEFAULT,
+): ImportBlock[] {
+  const min = Math.max(2, Math.floor(minRun));
+  const out: ImportBlock[] = [];
+  let run: PendingImageBlock[] = [];
+
+  const flush = (): void => {
+    let i = 0;
+    while (run.length - i >= min) {
+      const chunk = run.slice(i, i + GALLERY_MAX_IMAGES);
+      out.push({ type: 'gallery', srcs: chunk.map((b) => b.src) });
+      i += chunk.length;
+    }
+    for (; i < run.length; i++) out.push(run[i]!);
+    run = [];
+  };
+
+  for (const b of blocks) {
+    if (b.type === 'image' && b.caption === undefined) {
+      run.push(b);
+    } else {
+      flush();
+      out.push(b);
+    }
+  }
+  flush();
+  return out;
 }
 
 // --- post mapping ----------------------------------------------------------
@@ -227,6 +281,8 @@ export interface MapOptions {
   asDraft?: boolean;
   /** Byte size at/above which a referenced image is flagged in the report. */
   warnImageBytes?: number;
+  /** Min consecutive images that collapse into a gallery (default 3, floored at 2). */
+  galleryThreshold?: number;
 }
 
 /** Default thresholds for flagging an image as worryingly large in the report. */
@@ -290,7 +346,9 @@ export function mapPost(post: WpPost, media: MediaIndex, opts: MapOptions = {}):
   };
 
   const content = htmlToBlocks(post.content.rendered, resolveSrc);
-  blocks.push(...content.blocks);
+  // Bursts of consecutive photos read better as a grid gallery than a tall
+  // stack of full-width images, so collapse runs before assigning ids.
+  blocks.push(...coalesceImageRuns(content.blocks, opts.galleryThreshold));
   losses.push(...content.losses);
 
   if (blocks.length === 0 && !coverSrc) losses.push({ kind: 'empty_post', detail: post.slug });
@@ -343,6 +401,17 @@ export function finalizeBlocks(
         continue;
       }
       out.push({ type: 'image', imageId, ...(b.caption ? { caption: b.caption } : {}) });
+    } else if (b.type === 'gallery') {
+      const imageIds: string[] = [];
+      for (const src of b.srcs) {
+        const imageId = resolve(src);
+        if (!imageId) losses.push({ kind: 'unresolved_image', detail: src });
+        else imageIds.push(imageId);
+      }
+      // A gallery that lost every image disappears; otherwise keep the survivors.
+      if (imageIds.length > 0) {
+        out.push({ type: 'gallery', imageIds, ...(b.caption ? { caption: b.caption } : {}) });
+      }
     } else {
       out.push(b);
     }
@@ -377,7 +446,7 @@ export interface ImportPlan {
   losses: ImportLoss[];
   skipped: SkippedPost[];
   largeImages: LargeImage[];
-  counts: { posts: number; blocks: number; images: number; skipped: number };
+  counts: { posts: number; blocks: number; images: number; galleries: number; skipped: number };
 }
 
 /**
@@ -418,6 +487,10 @@ export function planImport(
   const largeImages = flagLargeImages(imageSources, media, opts.warnImageBytes);
 
   const blocks = mapped.reduce((n, m) => n + m.request.blocks.length, 0);
+  const galleries = mapped.reduce(
+    (n, m) => n + m.request.blocks.filter((b) => b.type === 'gallery').length,
+    0,
+  );
 
   return {
     mapped,
@@ -425,7 +498,13 @@ export function planImport(
     losses,
     skipped,
     largeImages,
-    counts: { posts: mapped.length, blocks, images: imageSources.length, skipped: skipped.length },
+    counts: {
+      posts: mapped.length,
+      blocks,
+      images: imageSources.length,
+      galleries,
+      skipped: skipped.length,
+    },
   };
 }
 
@@ -471,6 +550,7 @@ export function renderReport(plan: ImportPlan): string {
     `  Beiträge: ${plan.counts.posts}`,
     `  Blöcke:   ${plan.counts.blocks}`,
     `  Bilder:   ${plan.counts.images}`,
+    `  Galerien: ${plan.counts.galleries}`,
   ];
   if (plan.skipped.length > 0) {
     lines.push(`  Übersprungen (nicht veröffentlicht): ${plan.skipped.length}`);

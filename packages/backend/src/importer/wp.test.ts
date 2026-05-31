@@ -8,6 +8,7 @@ import {
   buildMediaIndex,
   htmlToBlocks,
   collectImageSrcs,
+  coalesceImageRuns,
   stripWpSizeSuffix,
   mapPost,
   finalizeBlocks,
@@ -183,6 +184,69 @@ describe('collectImageSrcs', () => {
     ];
     expect(collectImageSrcs(blocks)).toEqual(['https://x/1.jpg', 'https://x/2.jpg']);
   });
+
+  it('also collects the srcs inside a pending gallery block', () => {
+    const blocks: ImportBlock[] = [
+      { type: 'gallery', srcs: ['https://x/1.jpg', 'https://x/2.jpg'] },
+      { type: 'image', src: 'https://x/3.jpg' },
+      { type: 'image', src: 'https://x/1.jpg' },
+    ];
+    expect(collectImageSrcs(blocks)).toEqual([
+      'https://x/1.jpg',
+      'https://x/2.jpg',
+      'https://x/3.jpg',
+    ]);
+  });
+});
+
+describe('coalesceImageRuns', () => {
+  const img = (n: number): ImportBlock => ({ type: 'image', src: `https://x/${n}.jpg` });
+
+  it('groups a run of >= 3 consecutive caption-less images into one gallery', () => {
+    const out = coalesceImageRuns([img(1), img(2), img(3)]);
+    expect(out).toEqual<ImportBlock[]>([
+      { type: 'gallery', srcs: ['https://x/1.jpg', 'https://x/2.jpg', 'https://x/3.jpg'] },
+    ]);
+  });
+
+  it('leaves a run shorter than the threshold as individual image blocks', () => {
+    const out = coalesceImageRuns([img(1), img(2)]);
+    expect(out).toEqual<ImportBlock[]>([img(1), img(2)]);
+  });
+
+  it('keeps a captioned image standalone and breaks the run around it', () => {
+    const captioned: ImportBlock = { type: 'image', src: 'https://x/c.jpg', caption: 'wichtig' };
+    const out = coalesceImageRuns([img(1), img(2), captioned, img(3), img(4)]);
+    // Neither side reaches 3, so nothing is grouped; the caption is preserved.
+    expect(out).toEqual<ImportBlock[]>([img(1), img(2), captioned, img(3), img(4)]);
+  });
+
+  it('groups the runs on either side of a non-image block independently', () => {
+    const para: ImportBlock = { type: 'paragraph', text: 'Text' };
+    const out = coalesceImageRuns([img(1), img(2), img(3), para, img(4), img(5), img(6)]);
+    expect(out).toEqual<ImportBlock[]>([
+      { type: 'gallery', srcs: ['https://x/1.jpg', 'https://x/2.jpg', 'https://x/3.jpg'] },
+      para,
+      { type: 'gallery', srcs: ['https://x/4.jpg', 'https://x/5.jpg', 'https://x/6.jpg'] },
+    ]);
+  });
+
+  it('chunks a run beyond the 24-image cap, trailing remainder below threshold stays as images', () => {
+    const run = Array.from({ length: 26 }, (_, i) => img(i + 1));
+    const out = coalesceImageRuns(run);
+    expect(out).toHaveLength(3); // 24-gallery + 2 standalone images
+    expect(out[0]).toMatchObject({ type: 'gallery' });
+    if (out[0].type === 'gallery') expect(out[0].srcs).toHaveLength(24);
+    expect(out[1]).toEqual(img(25));
+    expect(out[2]).toEqual(img(26));
+  });
+
+  it('honours a custom minimum run length', () => {
+    const out = coalesceImageRuns([img(1), img(2)], 2);
+    expect(out).toEqual<ImportBlock[]>([
+      { type: 'gallery', srcs: ['https://x/1.jpg', 'https://x/2.jpg'] },
+    ]);
+  });
 });
 
 describe('mapPost', () => {
@@ -293,6 +357,25 @@ describe('mapPost', () => {
     expect(m.request.status).toBe('draft');
     expect(m.request.publishedAt).toBeUndefined();
   });
+
+  it('coalesces a run of >= 3 consecutive content images into a gallery block', () => {
+    const post: WpPost = {
+      ...byId(101),
+      featured_media: 0,
+      content: {
+        rendered:
+          '<p>Vorab</p>' +
+          '<p><img src="https://x/1.jpg"/></p>' +
+          '<p><img src="https://x/2.jpg"/></p>' +
+          '<p><img src="https://x/3.jpg"/></p>',
+      },
+    };
+    const m = mapPost(post, index);
+    expect(m.request.blocks).toEqual<ImportBlock[]>([
+      { type: 'paragraph', text: 'Vorab' },
+      { type: 'gallery', srcs: ['https://x/1.jpg', 'https://x/2.jpg', 'https://x/3.jpg'] },
+    ]);
+  });
 });
 
 describe('finalizeBlocks', () => {
@@ -316,6 +399,42 @@ describe('finalizeBlocks', () => {
     const { blocks, losses } = finalizeBlocks(pending, () => undefined);
     expect(blocks).toEqual([]);
     expect(losses).toEqual([{ kind: 'unresolved_image', detail: 'https://x/missing.jpg' }]);
+  });
+
+  it('resolves each src of a gallery block to an imageId', () => {
+    const pending: ImportBlock[] = [
+      { type: 'gallery', srcs: ['https://x/a.jpg', 'https://x/b.jpg', 'https://x/c.jpg'] },
+    ];
+    const ids: Record<string, string> = {
+      'https://x/a.jpg': 'id_a',
+      'https://x/b.jpg': 'id_b',
+      'https://x/c.jpg': 'id_c',
+    };
+    const { blocks, losses } = finalizeBlocks(pending, (src) => ids[src]);
+    expect(losses).toEqual([]);
+    expect(blocks).toEqual<Block[]>([
+      { type: 'gallery', imageIds: ['id_a', 'id_b', 'id_c'] },
+    ]);
+  });
+
+  it('drops only the unresolved members of a gallery, recording each loss', () => {
+    const pending: ImportBlock[] = [
+      { type: 'gallery', srcs: ['https://x/a.jpg', 'https://x/gone.jpg', 'https://x/c.jpg'] },
+    ];
+    const { blocks, losses } = finalizeBlocks(pending, (src) =>
+      src === 'https://x/gone.jpg' ? undefined : 'id',
+    );
+    expect(blocks).toEqual<Block[]>([{ type: 'gallery', imageIds: ['id', 'id'] }]);
+    expect(losses).toEqual([{ kind: 'unresolved_image', detail: 'https://x/gone.jpg' }]);
+  });
+
+  it('drops a gallery entirely when none of its images resolve', () => {
+    const pending: ImportBlock[] = [
+      { type: 'gallery', srcs: ['https://x/a.jpg', 'https://x/b.jpg', 'https://x/c.jpg'] },
+    ];
+    const { blocks, losses } = finalizeBlocks(pending, () => undefined);
+    expect(blocks).toEqual([]);
+    expect(losses).toHaveLength(3);
   });
 });
 
@@ -399,6 +518,18 @@ describe('planImport', () => {
     expect(plan.mapped[0]?.request.publishedAt).toBeUndefined();
   });
 
+  it('counts gallery blocks and still collects every image they reference', () => {
+    const content =
+      '<p><img src="https://x/1.jpg"/></p>' +
+      '<p><img src="https://x/2.jpg"/></p>' +
+      '<p><img src="https://x/3.jpg"/></p>';
+    const plan = planImport([makeWpPost(1, 'a', 'publish', content)], []);
+    expect(plan.counts.galleries).toBe(1);
+    expect(plan.counts.blocks).toBe(1); // the three images collapsed into one block
+    expect(plan.imageSources).toEqual(['https://x/1.jpg', 'https://x/2.jpg', 'https://x/3.jpg']);
+    expect(plan.counts.images).toBe(3);
+  });
+
   describe('large-image flagging', () => {
     const bigMedia = parseWpMedia([
       {
@@ -463,6 +594,23 @@ describe('renderReport', () => {
   it('reports the number of skipped non-published posts', () => {
     const plan = planImport(parseWpPosts(rawPosts), parseWpMedia(rawMedia));
     expect(renderReport(plan)).toMatch(/Übersprungen.*2/);
+  });
+
+  it('reports the number of gallery blocks formed', () => {
+    const content =
+      '<p><img src="https://x/1.jpg"/></p>' +
+      '<p><img src="https://x/2.jpg"/></p>' +
+      '<p><img src="https://x/3.jpg"/></p>';
+    const post: WpPost = {
+      id: 1,
+      slug: 'a',
+      status: 'publish',
+      date_gmt: '2020-01-01T00:00:00',
+      featured_media: 0,
+      title: { rendered: 'a' },
+      content: { rendered: content },
+    };
+    expect(renderReport(planImport([post], []))).toMatch(/Galerien:\s+1/);
   });
 
   it('reports "keine" when there are no losses', () => {
