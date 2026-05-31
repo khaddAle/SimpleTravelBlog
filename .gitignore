@@ -28,3 +28,6 @@ Thumbs.db
 # Vite
 .svelte-kit/
 .vite/
+
+# WP migration: corpus + reports (local only, never committed)
+import/

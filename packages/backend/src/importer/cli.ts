@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import { uploadAcceptedSchema } from '@stb/shared';
@@ -21,6 +21,7 @@ import {
  * itself is unit-tested in `wp.test.ts`.
  *
  *   npm run import-wp -- --source-dir=./corpus --dry-run
+ *   npm run import-wp -- --wp-url=https://old.example.com --save-corpus=./corpus --dry-run
  *   npm run import-wp -- --wp-url=https://old.example.com \
  *     --api-url=http://localhost:4000 --username=admin --password=… \
  *     --default-country=DE --default-place=Berlin
@@ -39,6 +40,8 @@ interface Args {
   password: string | undefined;
   dryRun: boolean;
   out: string;
+  /** Dump the fetched WP corpus here (wp-posts.json + wp-media.json) for repeatable offline trials. */
+  saveCorpus: string | undefined;
   limit: number | undefined;
   /** Delay between sequential image uploads, ms — eases load on the Pi. */
   throttleMs: number;
@@ -86,6 +89,7 @@ function parseArgs(argv: string[]): Args {
     password: flags.get('password'),
     dryRun: bare.has('dry-run'),
     out: flags.get('out') ?? 'migration-report.json',
+    saveCorpus: flags.get('save-corpus'),
     limit: limit !== undefined && Number.isFinite(limit) ? limit : undefined,
     throttleMs: throttle !== undefined && Number.isFinite(throttle) ? Math.max(0, throttle) : 250,
     map,
@@ -273,6 +277,24 @@ async function runLive(args: Args, plan: ImportPlan): Promise<RunResult> {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const corpus = await loadCorpus(args);
+
+  // Persist the raw corpus (esp. after a live fetch) so subsequent trials can
+  // run offline from --source-dir without re-hitting the WP REST API.
+  if (args.saveCorpus) {
+    await mkdir(args.saveCorpus, { recursive: true });
+    await writeFile(
+      path.join(args.saveCorpus, 'wp-posts.json'),
+      `${JSON.stringify(corpus.posts, null, 2)}\n`,
+      'utf8',
+    );
+    await writeFile(
+      path.join(args.saveCorpus, 'wp-media.json'),
+      `${JSON.stringify(corpus.media, null, 2)}\n`,
+      'utf8',
+    );
+    process.stdout.write(`Korpus gespeichert: ${args.saveCorpus}\n`);
+  }
+
   const posts = parseWpPosts(corpus.posts);
   const media = parseWpMedia(corpus.media);
   const plan = planImport(posts, media, args.map, args.limit);
@@ -303,6 +325,7 @@ async function main(): Promise<void> {
     report.finalizeLosses = result.finalizeLosses;
   }
 
+  await mkdir(path.dirname(path.resolve(args.out)), { recursive: true });
   await writeFile(args.out, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
   process.stdout.write(`\nBericht geschrieben: ${args.out}\n`);
 }
