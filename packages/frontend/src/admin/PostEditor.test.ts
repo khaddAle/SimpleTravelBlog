@@ -133,6 +133,50 @@ describe('PostEditor (create)', () => {
   });
 });
 
+describe('PostEditor unsaved-changes guard', () => {
+  it('does not warn when navigating away with no unsaved changes', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(PostEditor, {});
+    await screen.findByLabelText('Titel');
+    await user.click(screen.getByRole('link', { name: 'Bilder' }));
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('confirms before leaving via the nav when there are unsaved changes', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(PostEditor, {});
+    await fillRequiredMeta(user);
+    await user.click(screen.getByRole('link', { name: 'Bilder' }));
+    expect(confirm).toHaveBeenCalled();
+  });
+
+  it('confirms before logging out with unsaved changes and aborts on decline', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const logout = vi.spyOn(auth, 'logout').mockResolvedValue();
+    render(PostEditor, {});
+    await fillRequiredMeta(user);
+    await user.click(screen.getByRole('button', { name: 'Abmelden' }));
+    expect(confirm).toHaveBeenCalled();
+    expect(logout).not.toHaveBeenCalled();
+  });
+
+  it('registers a beforeunload guard once there are unsaved changes', async () => {
+    const user = userEvent.setup();
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    render(PostEditor, {});
+    await screen.findByLabelText('Titel');
+    const before = addSpy.mock.calls.filter((c) => c[0] === 'beforeunload').length;
+    await fillRequiredMeta(user);
+    await waitFor(() => {
+      const after = addSpy.mock.calls.filter((c) => c[0] === 'beforeunload').length;
+      expect(after).toBeGreaterThan(before);
+    });
+  });
+});
+
 describe('PostEditor (edit)', () => {
   it('loads an existing post into the form', async () => {
     vi.spyOn(api, 'getPost').mockResolvedValue(samplePost());

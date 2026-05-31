@@ -5,6 +5,7 @@
   import { api, ApiError } from '../lib/api.js';
   import type { PostMetadata } from '../lib/types.js';
   import { collectImageIds } from '../lib/imageRefs.js';
+  import { navGuard } from '../lib/navGuard.js';
   import AdminLayout from './AdminLayout.svelte';
   import MetadataSidebar from './editor/MetadataSidebar.svelte';
   import BlockEditor from './editor/BlockEditor.svelte';
@@ -29,6 +30,13 @@
   let loading = $state(true);
   let saving = $state(false);
   let error = $state('');
+
+  // Unsaved-changes tracking: snapshot the loaded state, then compare live.
+  // `null` until the post has loaded, so we never report dirty mid-load.
+  let initialSnapshot = $state<string | null>(null);
+  const isDirty = $derived.by(
+    () => initialSnapshot !== null && JSON.stringify({ metadata, blocks }) !== initialSnapshot,
+  );
 
   // Image-picker modal: a Promise-based bridge so BlockEditor can `await` a pick.
   let pickerMode = $state<null | 'single' | 'multiple'>(null);
@@ -60,8 +68,26 @@
         blocks = post.blocks;
       }
     } finally {
+      // Baseline for dirty-tracking, captured after any loaded data is applied.
+      initialSnapshot = JSON.stringify({ metadata, blocks });
       loading = false;
     }
+  });
+
+  // In-app departures (admin nav, logout) consult this guard; it confirms only
+  // while there are unsaved edits.
+  $effect(() => navGuard.register(() => isDirty));
+
+  // Tab close / reload / external navigation: warn via the browser's native
+  // prompt, but only while dirty (attached/detached as the flag flips).
+  $effect(() => {
+    if (!isDirty) return;
+    const handler = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
   });
 
   function openPicker(mode: 'single' | 'multiple', opts?: PickOpts): Promise<string[] | null> {
@@ -137,6 +163,8 @@
         const created = await api.createPost(buildBody());
         if (status === 'published') await api.updatePost(created.id, { status: 'published' });
       }
+      // Saved state is now the baseline, so leaving afterwards isn't guarded.
+      initialSnapshot = JSON.stringify({ metadata, blocks });
       push('/admin');
     } catch (err) {
       // Surface the server's reason for an unexpected failure; keep the plain
