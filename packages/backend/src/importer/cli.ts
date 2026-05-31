@@ -11,6 +11,7 @@ import {
   type ImportPlan,
   type MapOptions,
 } from './wp.js';
+import { drainSseEvents } from './sse.js';
 
 /**
  * WordPress importer entrypoint. Reads a WP REST corpus (live `--wp-url` or a
@@ -200,14 +201,14 @@ async function awaitUpload(apiUrl: string, session: Session, uploadId: string): 
     const { value, done } = await reader.read();
     if (done) return;
     buf += decoder.decode(value, { stream: true });
-    for (const line of buf.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data:')) continue;
-      const event = JSON.parse(trimmed.slice('data:'.length).trim()) as { type: string; message?: string };
+    // Only parse complete lines; a `data:` event split across chunks (common
+    // over the Cloudflare tunnel) stays in `rest` until its newline arrives.
+    const { events, rest } = drainSseEvents(buf);
+    buf = rest;
+    for (const event of events) {
       if (event.type === 'error') throw new Error(`transcode failed: ${event.message ?? ''}`);
       if (event.type === 'done') return;
     }
-    buf = buf.slice(buf.lastIndexOf('\n') + 1);
   }
 }
 
