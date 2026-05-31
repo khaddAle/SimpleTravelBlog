@@ -3,47 +3,15 @@
   import { coverImageId } from '../lib/posts.js';
   import { imageUrl } from '../lib/images.js';
   import { formatDate } from '../lib/dates.js';
+  import Photo from './Photo.svelte';
 
   let { post }: { post: PostDto } = $props();
   // Prefer an explicit per-post cover; fall back to the first block thumbnail.
   const cover = $derived(post.coverImageId ?? coverImageId(post.blocks));
 </script>
 
-<a class="post-card" href={`#/beitrag/${post.id}`}>
-  {#if cover}
-    <img src={imageUrl(cover, 'thumb')} alt="" />
-  {/if}
-  <div class="body">
-    <h3>{post.title}</h3>
-    <p class="meta">{formatDate(post.postDate)} · {post.placeName}</p>
-  </div>
+<a class="card" href={`#/beitrag/${post.id}`}>
+  <Photo src={cover ? imageUrl(cover, 'thumb') : undefined} ratio="r43" size="sm" />
+  <h3>{post.title}</h3>
+  <div class="meta">{post.placeName} · {formatDate(post.postDate)}</div>
 </a>
-
-<style>
-  .post-card {
-    display: block;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    overflow: hidden;
-    text-decoration: none;
-    color: inherit;
-  }
-  .post-card img {
-    width: 100%;
-    height: 160px;
-    object-fit: cover;
-    display: block;
-  }
-  .body {
-    padding: 0.6rem 0.8rem;
-  }
-  h3 {
-    margin: 0 0 0.25rem;
-    font-size: 1.1rem;
-  }
-  .meta {
-    margin: 0;
-    font-size: 0.85rem;
-    color: #718096;
-  }
-</style>

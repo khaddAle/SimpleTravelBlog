@@ -129,5 +129,5 @@ export function toSettingsDto(s: SettingsLike): SettingsDto {
 /** Default branding returned before an admin has saved any settings. */
 export const DEFAULT_SETTINGS: SettingsDto = {
   siteTitle: 'Reiseblog',
-  accentColor: '#3477eb',
+  accentColor: '#3f6699',
 };

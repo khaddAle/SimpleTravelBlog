@@ -4,7 +4,7 @@ import { api } from './api.js';
 /** Fallback branding before any settings have been loaded (mirrors backend). */
 export const DEFAULT_SETTINGS: SettingsDto = {
   siteTitle: 'Reiseblog',
-  accentColor: '#3477eb',
+  accentColor: '#3f6699',
 };
 
 /**

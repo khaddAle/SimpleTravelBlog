@@ -26,12 +26,19 @@ describe('PostCard', () => {
     expect(screen.getByText(/5\. März 2026/)).toBeInTheDocument();
   });
 
-  it('renders the cover thumbnail', () => {
+  it('renders the cover thumbnail in a small framed 4:3 photo', () => {
     const { container } = render(PostCard, { post });
-    expect(container.querySelector('img')).toHaveAttribute(
+    const frame = container.querySelector('.photo.sm .frame.r43');
+    expect(frame).toBeInTheDocument();
+    expect(frame?.querySelector('img')).toHaveAttribute(
       'src',
       '/api/public/images/img1/thumb',
     );
+  });
+
+  it('shows the meta as "Ort · Datum"', () => {
+    render(PostCard, { post });
+    expect(screen.getByText('Zugspitze · 5. März 2026')).toBeInTheDocument();
   });
 
   it('prefers an explicit coverImageId over the first block image', () => {

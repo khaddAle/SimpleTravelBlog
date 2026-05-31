@@ -13,7 +13,7 @@ afterEach(() => {
 describe('settings store', () => {
   it('defaults to Reiseblog branding', () => {
     expect(settings.siteTitle).toBe('Reiseblog');
-    expect(settings.accentColor).toBe('#3477eb');
+    expect(settings.accentColor).toBe('#3f6699');
     expect(settings.logoKey).toBeUndefined();
   });
 
