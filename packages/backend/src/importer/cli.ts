@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { uploadAcceptedSchema } from '@stb/shared';
 import {
@@ -83,6 +84,16 @@ interface Args {
 const sleep = (ms: number): Promise<void> =>
   ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 
+// Default output target for the report + dedup manifest: the git-ignored
+// repo-root `import/` folder (where corpora and prior reports live), resolved
+// from this module's location so it's independent of the cwd the importer is
+// run from (it runs in packages/backend via the workspace script). An explicit
+// --out / --manifest still overrides and stays relative to the cwd.
+const DEFAULT_OUT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../../../import/migration-report.json',
+);
+
 function parseArgs(argv: string[]): Args {
   const flags = new Map<string, string>();
   const bare = new Set<string>();
@@ -115,7 +126,7 @@ function parseArgs(argv: string[]): Args {
   const throttle = num('throttle-ms');
 
   const apiUrl = (flags.get('api-url') ?? 'http://localhost:4000').replace(/\/$/, '');
-  const out = flags.get('out') ?? 'migration-report.json';
+  const out = flags.get('out') ?? DEFAULT_OUT;
   // Dedup manifest lives beside the report, namespaced by target host, unless
   // overridden by --manifest or disabled by --no-dedup.
   const manifestFlag = flags.get('manifest');
