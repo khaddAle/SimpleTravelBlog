@@ -264,9 +264,10 @@ Decisions captured with the user 2026-06-01 (recorded inline per item). All TDD,
       preliminary). `actions/checkout@v5` + `actions/setup-node@v5` were already Node 24.
       Kept floating major tags to match repo style (SHA-pinning = optional future
       hardening). GitHub forces Node 24 on 2026-06-16, removes Node 20 on 2026-09-16.
-      - ⚠ **STILL TODO (separate repo): the deploy repo `kube-at-home-travelblog`
-        `image-bump.yml`** — out of this workspace, can't edit from here. Bump any
-        Node-20 actions there before 2026-06-16.
+      - [X] **Deploy repo `kube-at-home-travelblog` `image-bump.yml` — VERIFIED CLEAN
+        2026-06-01.** Its only `uses:` is `actions/checkout@v5` (already Node 24); every
+        other step is a shell `run:` (curl/jq/gh/git/sed), unaffected by the Node-20
+        JS-action deprecation. Nothing to bump there.
 
 ### Cutover (#21) — DONE 2026-06-01
 
