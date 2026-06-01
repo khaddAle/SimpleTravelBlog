@@ -157,8 +157,8 @@ describe('error message extraction', () => {
 
   it('parses a non-JSON ok body as text without throwing', async () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200, text: async () => 'plain' } as Response);
-    // The parse fallback returns the raw string; publicMap then reads .points → undefined.
-    await expect(api.publicMap()).resolves.toBeUndefined();
+    // The parse fallback returns the raw string; publicTrips then reads .trips → undefined.
+    await expect(api.publicTrips()).resolves.toBeUndefined();
   });
 });
 
@@ -235,8 +235,12 @@ describe('remaining endpoints', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ trips: [{ id: 't1', name: 'Alpen' }] }));
     expect(await api.publicTrips()).toHaveLength(1);
 
-    fetchMock.mockResolvedValueOnce(jsonResponse({ points: [{ id: 'p1', title: 'T' }] }));
-    expect(await api.publicMap()).toHaveLength(1);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ points: [{ id: 'p1', title: 'T' }], unlocatedCount: 2 }),
+    );
+    const map = await api.publicMap();
+    expect(map.points).toHaveLength(1);
+    expect(map.unlocatedCount).toBe(2);
 
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ settings: { siteTitle: 'X', accentColor: '#000000' } }),

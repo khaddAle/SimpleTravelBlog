@@ -3,23 +3,30 @@ import { buildPublishedSearch } from './search.js';
 
 describe('buildPublishedSearch', () => {
   it('always restricts to published posts and sorts by recency', () => {
-    const { filter, sort, projectScore } = buildPublishedSearch({});
+    const { filter, sort } = buildPublishedSearch({});
     expect(filter).toEqual({ status: 'published' });
     expect(sort).toEqual({ postDate: -1 });
-    expect(projectScore).toBe(false);
   });
 
-  it('adds a german $text clause and a relevance sort for a term', () => {
-    const { filter, sort, projectScore } = buildPublishedSearch({ q: '  berge  ' });
-    expect(filter.$text).toEqual({ $search: 'berge', $language: 'german' });
-    expect(sort).toEqual({ score: { $meta: 'textScore' }, postDate: -1 });
-    expect(projectScore).toBe(true);
+  it('adds a folded literal-substring regex on searchFold for a term', () => {
+    const { filter } = buildPublishedSearch({ q: '  Berge  ' });
+    // Trimmed, folded (lowercased) and matched as a substring.
+    expect(filter.searchFold).toEqual({ $regex: 'berge' });
+  });
+
+  it('folds umlauts in the query the same way the stored field is folded', () => {
+    const { filter } = buildPublishedSearch({ q: 'München' });
+    expect(filter.searchFold).toEqual({ $regex: 'muenchen' });
+  });
+
+  it('escapes regex metacharacters so the query matches literally (no ReDoS / injection)', () => {
+    const { filter } = buildPublishedSearch({ q: '(a+)+' });
+    expect(filter.searchFold).toEqual({ $regex: '\\(a\\+\\)\\+' });
   });
 
   it('ignores a whitespace-only term', () => {
-    const { filter, projectScore } = buildPublishedSearch({ q: '   ' });
-    expect(filter.$text).toBeUndefined();
-    expect(projectScore).toBe(false);
+    const { filter } = buildPublishedSearch({ q: '   ' });
+    expect(filter.searchFold).toBeUndefined();
   });
 
   it('filters by country and resolved trip id', () => {

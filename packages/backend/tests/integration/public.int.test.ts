@@ -93,7 +93,7 @@ describe('public reader API integration', () => {
     expect(single.body.post.tripId).toBe(tripId);
   });
 
-  it('runs a combined $text + country + trip + date search over published posts', async () => {
+  it('runs a combined text + country + trip + date search over published posts', async () => {
     const trip = await auth.agent
       .post('/api/trips')
       .set('x-csrf-token', auth.csrf)
@@ -125,6 +125,34 @@ describe('public reader API integration', () => {
     expect(byDate.body.total).toBe(0);
   });
 
+  it('matches a partial word as the reader types (substring, not whole-word)', async () => {
+    const id = await createPublished({ title: 'Zugspitze', placeName: 'Garmisch' });
+    await createPublished({ title: 'Strand', placeName: 'Rom', country: 'IT' });
+
+    // "zug" is only a fragment of "Zugspitze" — the old $text index matched
+    // nothing here, which is the "Suche tut nichts" bug.
+    const res = await request(app.server).get('/api/public/search?q=zug');
+    expect(res.body.posts.map((p: { id: string }) => p.id)).toEqual([id]);
+  });
+
+  it('is case- and accent-insensitive via the folded field', async () => {
+    const id = await createPublished({ title: 'Über die Alpen', placeName: 'München' });
+
+    for (const q of ['MÜNCHEN', 'münch', 'muenchen']) {
+      const res = await request(app.server).get(`/api/public/search?q=${encodeURIComponent(q)}`);
+      expect(res.body.posts.map((p: { id: string }) => p.id)).toEqual([id]);
+    }
+  });
+
+  it('treats regex metacharacters in the query as literal text (no injection)', async () => {
+    await createPublished({ title: 'Zugspitze', placeName: 'Garmisch' });
+
+    // A wildcard-looking query must NOT match everything — it is a literal that
+    // appears in no post, so it returns nothing rather than the whole corpus.
+    const res = await request(app.server).get('/api/public/search?q=.%2B');
+    expect(res.body.total).toBe(0);
+  });
+
   it('returns empty results for an unknown trip filter', async () => {
     const res = await request(app.server).get('/api/public/search?tripId=nope12');
     expect(res.body).toEqual({ posts: [], total: 0 });
@@ -136,6 +164,34 @@ describe('public reader API integration', () => {
     expect(map.body.points).toEqual([
       { id, title: 'Berge', lat: 47.42, lng: 10.98, country: 'DE', placeName: 'Zugspitze' },
     ]);
+    expect(map.body.unlocatedCount).toBe(0);
+  });
+
+  it('omits placeholder-coordinate posts from the map and counts them apart', async () => {
+    // The WP import stamps geo-less posts with country 'XX' / placeName 'Unbekannt'
+    // at 0,0. Those must not pile up at Null Island nor stretch fitBounds — they
+    // are surfaced only as a separate "ohne Ort" count.
+    const located = await createPublished();
+    await createPublished({
+      title: 'Ohne Ort',
+      country: 'XX',
+      placeName: 'Unbekannt',
+      lat: 0,
+      lng: 0,
+    });
+
+    const map = await request(app.server).get('/api/public/map');
+    expect(map.body.points).toEqual([
+      {
+        id: located,
+        title: 'Berge',
+        lat: 47.42,
+        lng: 10.98,
+        country: 'DE',
+        placeName: 'Zugspitze',
+      },
+    ]);
+    expect(map.body.unlocatedCount).toBe(1);
   });
 
   it('lists only trips that have published posts', async () => {

@@ -5,6 +5,7 @@ import { connectMongo } from './db/connection.js';
 import { createRedis } from './redis/client.js';
 import { buildApp } from './app.js';
 import { ensureFirstAdmin } from './bootstrap/firstAdmin.js';
+import { backfillSearchFold } from './bootstrap/backfillSearchFold.js';
 
 /**
  * Built SPA location. In the container, `dist/server.js` runs from `/app` with
@@ -33,6 +34,9 @@ async function main(): Promise<void> {
 
   const app = await buildApp({ redis, config, logger: true, staticRoot });
   await ensureFirstAdmin(config, app.log);
+  // One-time fill of the substring-search field for posts saved before it
+  // existed (the WP import); idempotent, so harmless on later boots.
+  await backfillSearchFold(app.log);
   await app.listen({ host: '0.0.0.0', port: config.port });
 }
 

@@ -39,6 +39,16 @@ describe('Post model', () => {
     expect(p.searchText).not.toContain('a3kf2x');
   });
 
+  it('builds a folded searchFold for case-/accent-insensitive substring search', async () => {
+    const p = await Post.create(
+      basePost({ title: 'Über die Alpen nach München', placeName: 'München' }),
+    );
+    // Lowercased, umlauts expanded to digraphs — and a partial word is a substring.
+    expect(p.searchFold).toContain('ueber die alpen nach muenchen');
+    expect(p.searchFold).toContain('muench');
+    expect(p.searchFold).not.toMatch(/[A-ZÄÖÜ]/);
+  });
+
   it('stamps publishedAt when a post becomes published', async () => {
     const p = await Post.create(basePost({ status: 'published' }));
     expect(p.publishedAt).toBeInstanceOf(Date);

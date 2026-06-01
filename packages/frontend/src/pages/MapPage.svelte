@@ -8,11 +8,16 @@
 
   let mapEl: HTMLDivElement;
   let points = $state<MapPoint[]>([]);
+  // Published posts the WP import left without a location — surfaced as a count,
+  // never as fake markers at Null Island.
+  let unlocatedCount = $state(0);
   let loading = $state(true);
 
   onMount(async () => {
     try {
-      points = await api.publicMap();
+      const data = await api.publicMap();
+      points = data.points;
+      unlocatedCount = data.unlocatedCount;
     } finally {
       loading = false;
     }
@@ -84,6 +89,13 @@
             </span>
           </a>
         {/each}
+      {/if}
+      {#if !loading && unlocatedCount > 0}
+        <p class="unlocated">
+          {unlocatedCount === 1
+            ? '1 Beitrag ohne Ort'
+            : `${unlocatedCount} Beiträge ohne Ort`}
+        </p>
       {/if}
     </div>
   </div>
@@ -165,6 +177,13 @@
   .status {
     padding: 8px;
     color: var(--muted);
+  }
+  .unlocated {
+    margin: 10px 8px 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--faint);
   }
   .mrow {
     display: flex;

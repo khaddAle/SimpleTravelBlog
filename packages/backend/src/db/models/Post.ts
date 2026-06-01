@@ -1,6 +1,7 @@
 import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose';
 import { blockArraySchema, type Block } from '@stb/shared';
 import { blocksToSearchText } from '../../blocks/plaintext.js';
+import { foldSearch } from '../../posts/fold.js';
 
 const postSchema = new Schema(
   {
@@ -20,8 +21,12 @@ const postSchema = new Schema(
     status: { type: String, enum: ['draft', 'published'], required: true, default: 'draft' },
     authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     publishedAt: { type: Date },
-    // Denormalized, german-analyzed search field; rebuilt on every save.
+    // Denormalized search fields, both rebuilt on every save: `searchText` is
+    // the human-readable concatenation; `searchFold` is its folded form (see
+    // posts/fold.ts) that the public search matches as a case-/accent-
+    // insensitive literal substring.
     searchText: { type: String, default: '' },
+    searchFold: { type: String, default: '' },
   },
   { timestamps: true },
 );
@@ -39,6 +44,7 @@ postSchema.pre('save', function denormalize() {
   const blocks = (this.blocks ?? []) as Block[];
   const parts = [this.title, this.subtitle ?? '', this.placeName, blocksToSearchText(blocks)];
   this.searchText = parts.join(' ').replace(/\s+/g, ' ').trim();
+  this.searchFold = foldSearch(this.searchText);
 
   // Stamp publishedAt the first time a post becomes published.
   if (this.status === 'published' && !this.publishedAt) {

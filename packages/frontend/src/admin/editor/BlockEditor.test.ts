@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import type { Block } from '@stb/shared';
@@ -29,6 +29,8 @@ async function insert(
 function blocks(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>('.block'));
 }
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('BlockEditor', () => {
   it('shows an empty hint when there are no blocks', () => {
@@ -90,15 +92,29 @@ describe('BlockEditor', () => {
     ]);
   });
 
-  it('deletes a block', async () => {
+  it('deletes a block after the user confirms, naming the block type', async () => {
     const user = userEvent.setup();
+    const confirm = vi.spyOn(globalThis, 'confirm').mockReturnValue(true);
     const { onChange, container } = setup([
       { type: 'title', text: 'A' },
       { type: 'divider' },
     ]);
     const items = blocks(container);
     await user.click(within(items[0]!).getByLabelText('Entfernen'));
+    expect(confirm).toHaveBeenCalledWith('Titel entfernen?');
     expect(onChange).toHaveBeenLastCalledWith([{ type: 'divider' }]);
+  });
+
+  it('keeps the block when the delete confirm is declined', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(globalThis, 'confirm').mockReturnValue(false);
+    const { onChange, container } = setup([
+      { type: 'title', text: 'A' },
+      { type: 'divider' },
+    ]);
+    await user.click(within(blocks(container)[0]!).getByLabelText('Entfernen'));
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it('inserts an image via the pickImage resolver', async () => {

@@ -1,4 +1,5 @@
 import type { SearchQuery } from '@stb/shared';
+import { foldSearch, escapeRegex } from './fold.js';
 
 /**
  * Translate a public search query into a Mongo filter + sort for the Post
@@ -6,22 +7,24 @@ import type { SearchQuery } from '@stb/shared';
  *
  * `tripId` is the resolved Trip ObjectId (as a string) — the public API filters
  * by a trip's shortId, which the route resolves before calling this. Free-text
- * search uses the german `$text` index and sorts by relevance then recency.
+ * search matches the query as a LITERAL, case-/accent-insensitive substring of
+ * the denormalized `searchFold` field, so partial words match as the reader
+ * types (the old `$text` index only matched whole stemmed words).
  */
 export interface BuiltSearch {
   filter: Record<string, unknown>;
-  sort: Record<string, 1 | -1 | { $meta: 'textScore' }>;
-  projectScore: boolean;
+  sort: Record<string, 1 | -1>;
 }
 
 export function buildPublishedSearch(query: SearchQuery, tripId?: string): BuiltSearch {
   const filter: Record<string, unknown> = { status: 'published' };
-  let projectScore = false;
 
   const term = query.q?.trim();
   if (term) {
-    filter.$text = { $search: term, $language: 'german' };
-    projectScore = true;
+    // Fold the query exactly like the stored field, then escape it so it is
+    // matched literally. Escaping is the security boundary — it is what stops a
+    // crafted query from injecting a regex pattern (ReDoS / unintended matches).
+    filter.searchFold = { $regex: escapeRegex(foldSearch(term)) };
   }
   if (query.country) filter.country = query.country;
   if (tripId) filter.tripId = tripId;
@@ -31,9 +34,5 @@ export function buildPublishedSearch(query: SearchQuery, tripId?: string): Built
   if (query.to) range.$lte = new Date(query.to);
   if (Object.keys(range).length > 0) filter.postDate = range;
 
-  const sort: BuiltSearch['sort'] = projectScore
-    ? { score: { $meta: 'textScore' }, postDate: -1 }
-    : { postDate: -1 };
-
-  return { filter, sort, projectScore };
+  return { filter, sort: { postDate: -1 } };
 }

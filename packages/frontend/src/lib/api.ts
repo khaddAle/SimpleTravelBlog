@@ -65,6 +65,13 @@ export interface MapPoint {
   placeName: string;
 }
 
+export interface MapData {
+  /** Published posts with real coordinates (Null-Island placeholders excluded). */
+  points: MapPoint[];
+  /** Count of published posts the import left without a location. */
+  unlocatedCount: number;
+}
+
 export interface PostRef {
   id: string;
   title: string;
@@ -313,8 +320,8 @@ export const api = {
   async publicTrips(): Promise<TripDto[]> {
     return (await request<{ trips: TripDto[] }>('/api/public/trips')).trips;
   },
-  async publicMap(): Promise<MapPoint[]> {
-    return (await request<{ points: MapPoint[] }>('/api/public/map')).points;
+  async publicMap(): Promise<MapData> {
+    return await request<MapData>('/api/public/map');
   },
   async publicSettings(): Promise<SettingsDto> {
     return (await request<{ settings: SettingsDto }>('/api/public/settings')).settings;

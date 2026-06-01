@@ -16,6 +16,19 @@ import type { RouteContext } from './context.js';
 const PUBLISHED = { status: 'published' as const };
 const SEARCH_LIMIT = 100;
 
+// The WP import stamps geo-less posts with country 'XX' at 0,0 (Null Island).
+// On the Karte those would pile up off the African coast and stretch fitBounds,
+// so we partition them out as a separate "ohne Ort" count. The two matchers are
+// exact complements within the published set.
+const PLACEHOLDER_COUNTRY = 'XX';
+const LOCATED_MATCH = {
+  country: { $ne: PLACEHOLDER_COUNTRY },
+  $nor: [{ lat: 0, lng: 0 }],
+};
+const UNLOCATED_MATCH = {
+  $or: [{ country: PLACEHOLDER_COUNTRY }, { lat: 0, lng: 0 }],
+};
+
 /** Anonymous reader API. No auth; only published content is exposed. */
 export function registerPublicRoutes(app: FastifyInstance, ctx: RouteContext): void {
   const { storage } = ctx;
@@ -70,10 +83,8 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: RouteContext): v
       tripObjectId = resolved;
     }
 
-    const { filter, sort, projectScore } = buildPublishedSearch(parsed.data, tripObjectId);
-    let query = Post.find(filter);
-    if (projectScore) query = query.select({ score: { $meta: 'textScore' } });
-    const posts = await query.sort(sort).limit(SEARCH_LIMIT).lean();
+    const { filter, sort } = buildPublishedSearch(parsed.data, tripObjectId);
+    const posts = await Post.find(filter).sort(sort).limit(SEARCH_LIMIT).lean();
 
     const tripMap = await attachTripShortIds(posts);
     return {
@@ -99,14 +110,13 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: RouteContext): v
   });
 
   app.get('/api/public/map', async () => {
-    const posts = await Post.find(PUBLISHED, {
-      shortId: 1,
-      title: 1,
-      lat: 1,
-      lng: 1,
-      country: 1,
-      placeName: 1,
-    }).lean();
+    const [posts, unlocatedCount] = await Promise.all([
+      Post.find(
+        { ...PUBLISHED, ...LOCATED_MATCH },
+        { shortId: 1, title: 1, lat: 1, lng: 1, country: 1, placeName: 1 },
+      ).lean(),
+      Post.countDocuments({ ...PUBLISHED, ...UNLOCATED_MATCH }),
+    ]);
     return {
       points: posts.map((p) => ({
         id: p.shortId,
@@ -116,6 +126,7 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: RouteContext): v
         country: p.country,
         placeName: p.placeName,
       })),
+      unlocatedCount,
     };
   });
 

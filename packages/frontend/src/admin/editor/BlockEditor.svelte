@@ -47,6 +47,10 @@
   }
 
   function remove(index: number): void {
+    // Deleting a block is destructive and not part of the undo-less editor, so
+    // confirm first — naming the block type so it's clear what disappears.
+    const label = TYPE_LABELS[entries[index]!.block.type];
+    if (!globalThis.confirm(`${label} entfernen?`)) return;
     entries.splice(index, 1);
     emit();
   }

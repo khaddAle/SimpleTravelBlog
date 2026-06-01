@@ -6,6 +6,228 @@ the plan and the per-phase memory note.
 
 ## Open
 
+### Reader + editor features (found during dev testing 2026-06-01)
+
+Decisions captured with the user 2026-06-01 (recorded inline per item). All TDD,
+80% gate, German UI strings inline.
+
+- [ ] **"Alle Beiträge" (Archive) — page beyond the first 100 via a „Mehr laden"
+      button.** Bug: `Archive.svelte` calls `api.publicPosts(1, 100)` (100 = the
+      backend max `pageSize`, `paginationQuerySchema` in `packages/shared/src/api.ts`),
+      so with >100 posts the rest are silently dropped. **DECISION: „Mehr laden"
+      button** (not numbered pages — keeps the Land→Reise→Beitrag grouping in
+      `lib/archive.ts` from splitting; not auto-load-all). Show the first 100, append
+      the next page on click, recompute grouping as more load; hide the button when
+      the last page is reached (use the paged response's total/hasMore). Backend
+      `GET /api/public/posts` already supports `page`/`pageSize` (`routes/public.ts`).
+      Frontend-led; verify the public posts response exposes enough to know when to
+      stop (total count or items < pageSize). NOTE: `Search.svelte` (line 32) has the
+      SAME `publicPosts(1, 100)` cap when seeding its country/month filter lists — its
+      dropdowns miss countries/months that only appear in posts >100; fix alongside
+      (fetch all pages for the filter seed, or a dedicated lightweight facets call).
+      - ✔ Stop-condition is easy: `GET /api/public/posts` already returns `total`
+        (`routes/public.ts:47`), so `loaded < total` ⇒ show the button. Surface `total`
+        through `api.publicPosts` if it isn't already.
+      - ⚠ **Risk (MED — UX):** grouped view (Land→Reise→Beitrag, newest-first) +
+        append means page 2 (older posts) scatters into *existing* groups **above**
+        the button, not at the bottom — clicking „Mehr laden" makes content appear
+        off-screen and a brand-new country can slot in anywhere alphabetically, which
+        is disorienting. **Address:** after appending, keep scroll position stable
+        (anchor on the button), and show a running „N von TOTAL Beiträgen" counter so
+        the user understands more loaded even if it landed higher up; consider a flat
+        „Neueste zuerst" toggle as an escape hatch if the scatter feels wrong.
+
+- [ ] **Reisen management — dedicated admin page (create / rename / delete), open to
+      all authors.** Today there is NO UI to create or edit a Reise — only the
+      assign-`<select>` in `MetadataSidebar.svelte` (lines ~142). Backend
+      (`routes/trips.ts`) has list (GET) + create (POST) + delete (DELETE) but **no
+      rename**, and the frontend `api` has `listTrips`/`createTrip`/`deleteTrip` but no
+      `updateTrip`. **DECISIONS:** (a) a **dedicated „Reisen" admin page** in the nav
+      (list + create + rename + delete); the post sidebar stays **assign-only** (no
+      inline create). (b) **Permissions: all logged-in authors** may manage Reisen —
+      matches the current `requireAuth` on the trip routes, no gating change (do NOT
+      mirror the admin-only Nutzer/Einstellungen gating here). (c) **Deletion stays
+      'only when empty'** — keep the backend's existing 409-if-referenced rule; the UI
+      explains why and links the referencing posts so the author can reassign first
+      (the DELETE route already returns the referencing posts). NEW WORK: add a
+      **rename** endpoint (`PATCH/PUT /api/trips/:shortId`, name unique 1–120,
+      `requireAuth`+`requireCsrf`, 409 on duplicate name) + `api.updateTrip` +
+      the page component. TDD backend + frontend.
+      - ⚠ **Risk (MED — impl):** the Trip `name` has a UNIQUE index, so a rename that
+        collides will throw a Mongo `E11000` duplicate-key error and surface as a 500,
+        not the intended 409. **Address:** pre-check `Trip.findOne({ name })` (excluding
+        the same shortId) and/or catch `E11000` and map it to `httpErrors.conflict`;
+        cover the duplicate-rename case in the test. Also normalize/trim the name the
+        same way create does so " Foo" vs "Foo" don't both slip in.
+      - ⚠ **Risk (MED — correctness):** rename must keep `shortId` STABLE — search
+        filters (`?tripId=`), archive grouping, and any shared links key on the
+        shortId, not the name. **Address:** update only `name`; never regenerate
+        `shortId` on rename (a test asserting the shortId is unchanged is cheap).
+
+- [X] **Suche — switch to live substring filtering — DONE (Phase 1 #2, 2026-06-01).**
+      Implemented: new pure `posts/fold.ts` (`foldSearch` = lowercase + ä→ae/ö→oe/ü→ue/
+      ß→ss + NFD-strip; `escapeRegex`); Post `pre('save')` now also stores `searchFold`
+      and `buildPublishedSearch` matches `{ searchFold: { $regex: escapeRegex(foldSearch(q)) } }`
+      (sorted by date; the `$text` projection was dropped from the route). SECURITY
+      mitigation in place (literal-substring escape → no ReDoS/injection; covered by a
+      backtracking-payload test). Existing posts backfilled via idempotent
+      `bootstrap/backfillSearchFold.ts` wired into `server.ts`. Perf scan accepted at
+      this size (comment in `search.ts`). The `$text` index is retained (unused by
+      search) to avoid prod index drift. TDD: `fold.test.ts`, `search.test.ts`,
+      `Post.test.ts`, `backfillSearchFold.test.ts`, `public.int.test.ts`. The original
+      analysis + risk notes are kept below for reference.
+
+- [~] **(superseded by the DONE entry above) Suche — switch to live substring filtering
+      (currently matches nothing on partial input).** Diagnosis: `Search.svelte` IS wired (live, 200 ms debounce,
+      `$effect`) and the Mongo `searchText` text index exists — but `$text` matches
+      **whole stemmed words**, so typing a partial term ("Ber") returns nothing until
+      a complete word ("Bergen") is entered → reads as "nothing happens". **DECISION:
+      live substring filtering** — case-insensitive substring across title, Ortsname,
+      Land **and post body**, updating per keystroke (keep the debounce, no submit
+      button). Replace the `$text` query in `packages/backend/src/posts/search.ts`
+      (and its route in `routes/public.ts`) with a case-insensitive substring match
+      (e.g. regex on `searchText`/title/placeName; `searchText` already denormalizes
+      title+subtitle+placeName+body via the Post `pre('save')` hook). Mind regex-escape
+      the user input and keep the country/trip/date filters. With a few hundred posts
+      the scan is fine; revisit only if the corpus grows. TDD the search builder.
+      - ⚠ **Risk (HIGH — UX regression):** the current Mongo `$text` index uses German
+        stemming + folding, so it matches case- AND diacritic-insensitively (e.g.
+        "munchen"/"muenchen" → "München"). A naive `/q/i` regex matches case but NOT
+        diacritics — "munchen" would suddenly find nothing, a real regression for a
+        German blog. **Address:** add a denormalized FOLDED field (lowercased +
+        diacritics transliterated: ä→ae, ö→oe, ü→ue, ß→ss, plus NFD-strip the rest)
+        computed in the Post `pre('save')` hook beside `searchText`, fold the query the
+        same way, and regex against the folded field. (Backfill the field on existing
+        posts via a tiny migration / re-save, or the imported corpus won't match.)
+      - ⚠ **Risk (MED — SECURITY, MUST mitigate — NOT accepted):** building `$regex`
+        from raw `q` lets an anonymous caller control the regex *pattern* run against
+        every post body on the public `GET /api/public/search`. A crafted pattern
+        (e.g. `(a+)+$`) triggers catastrophic backtracking (Mongo `$regex` → PCRE) =
+        unauthenticated **ReDoS** / CPU exhaustion on the 1–2-core prod Pi; lesser
+        variant = pattern injection (`.*`, anchors) skewing matches. `SEARCH_LIMIT=100`
+        caps result size but NOT backtracking cost. **Address (required):** escape all
+        regex metacharacters so `q` matches as a LITERAL substring —
+        `q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')` — which both removes the injection
+        and makes the pattern linear-time (no backtracking ⇒ no ReDoS). Keep the
+        existing `z.string().max(200)` cap (`api.ts:186`) and never spread user input
+        as a query object (zod already guarantees `q` is a string, blocking
+        `$`-operator injection). Add a test feeding a backtracking pattern.
+      - ⚠ **Risk (MED — perf, ACCEPTED at this size):** an escaped-but-unanchored `i`
+        regex is still NOT index-backed → full collection scan. Fine for a few hundred
+        posts; leave a comment to revisit (e.g. restore `$text` as a whole-word fast
+        path, or a dedicated search index) only if the corpus grows into the thousands.
+
+- [ ] **Karte — viewport-filtered list, „X weitere…" hint, and bidirectional
+      hover-highlight.** Today `MapPage.svelte` loads ALL points (`api.publicMap()`),
+      drops every marker, and lists every post in the side panel — no viewport
+      awareness, clustering, or map↔list link. **DECISIONS (no new dependency):**
+      (a) **viewport-filtered side list** — the list shows only posts whose marker is
+      within the current map bounds; recompute on `moveend`/`zoomend`. (b) when many
+      remain off-screen, show the visible subset **+ a „X weitere… (heranzoomen)"
+      hint** (NOT clustering, NOT a paginated list). (c) **bidirectional
+      hover-highlight** — hovering a side-list item highlights its map marker and vice
+      versa (only when the marker is in the visible list). (d) nudge/offset overlapping
+      pins slightly so co-located markers are distinguishable. Pure frontend on the
+      reader Karte; `MapPage` and the editor `MapPicker` share no map util (independent
+      Leaflet setups) so this doesn't touch the editor. TDD the viewport-filter +
+      highlight-link logic (extract the bounds-filter into a testable helper).
+      - [X] **Risk (HIGH — data) — DONE (Phase 1 #1, 2026-06-01):** the WP cutover
+        imported geo-less posts with PLACEHOLDER coords `lat:0, lng:0` / `country:'XX'` /
+        `placeName:'Unbekannt'`, and `GET /api/public/map` did NOT filter them, piling
+        every imported post at Null Island and stretching `fitBounds`. **Fixed:**
+        `/api/public/map` now partitions the published set with `LOCATED_MATCH`
+        (`country≠'XX'` AND not `lat:0,lng:0`) vs `UNLOCATED_MATCH`, returns
+        `{ points, unlocatedCount }`; `MapPage` shows „N Beiträge ohne Ort" (singular
+        „1 Beitrag ohne Ort") instead of fake markers, so only real points reach
+        `fitBounds`. TDD: backend `public.int.test.ts` + frontend `MapPage.test.ts`.
+        This unblocks the viewport feature above. (Still a nudge to fill real geo via
+        the per-post map picker / the big-map-modal item below.)
+      - ⚠ **Risk (MED — perf):** recreating hundreds of Leaflet markers on every
+        `moveend`/`zoomend` will jank on weaker devices. **Address:** build the marker
+        layer ONCE, keep marker instances in a `Map<id, marker>`, and on map-move only
+        recompute the visible-id set + toggle a highlight CSS class — never tear down
+        and rebuild markers. Drive hover-highlight off enter/leave events, not
+        mousemove.
+
+- [ ] **Editor — „Auf großer Karte wählen" modal (deferred-confirm location picker).**
+      The inline `MapPicker.svelte` (240 px) sets the location **immediately** on
+      click; fine for most cases but cramped for precise picks. **DECISION: keep the
+      small inline picker AND add a button „Auf großer Karte wählen"** that opens a
+      **large map + search modal** where clicks set only a **provisional** marker;
+      the location is applied to the post only on **„Standort übernehmen"** and
+      discarded on **„Abbrechen"** (modal closes without changing anything). Reuse the
+      Nominatim `geocode`/`reverseGeocode` (`lib/nominatim.ts`) + `fillMissingPlace`
+      auto-fill on confirm (only-when-empty, same as the inline picker). Mind the
+      `z-index: 2000` modal convention (above Leaflet's 1000) already used in
+      `PostEditor.svelte`. Wording is provisional — adjust if you prefer. Pure
+      frontend; factor the shared map/search/geocode bits so the modal and the inline
+      picker don't duplicate logic. TDD.
+      - ⚠ **Risk (HIGH — impl):** the classic Leaflet-in-modal bug — a map initialised
+        while its container is `display:none`/zero-size (i.e. before the modal opens)
+        renders grey/half-drawn tiles and a wrong center until `invalidateSize()` runs.
+        **Address:** create the map only AFTER the modal is in the DOM with real
+        dimensions, and call `map.invalidateSize()` on open (after `await tick()` / once
+        the container is measured); re-`fitBounds`/recenter on the provisional marker
+        right after.
+      - ⚠ **Risk (MED — regression):** refactoring the map/search/geocode out of the
+        working inline `MapPicker` to share it risks breaking the inline picker (which
+        is on the critical post-save path). **Address:** prefer a small shared module
+        (`lib/nominatim` already exists; add a thin map-init helper) consumed by BOTH,
+        rather than rewriting `MapPicker`; keep the inline picker's existing tests green
+        and add modal tests. Mind Nominatim's ~1 req/s usage policy — debounce the
+        modal search like the inline one.
+
+### Editor UX + permissions (found during dev testing 2026-05-30)
+
+- [X] **Confirm before deleting a block/element — DONE (Phase 1 #3, 2026-06-01).**
+      `BlockEditor.remove()` now calls `globalThis.confirm(`${label} entfernen?`)`
+      (naming the block type, e.g. „Galerie entfernen?") before splicing — matching the
+      existing `PostList` delete-confirm convention. TDD in `BlockEditor.test.ts`
+      (confirm → removes; decline → unchanged). German strings inline.
+- [ ] **Free a deleted element's images for re-selection.** After removing a
+      gallery/image block, its images should become selectable again in the
+      "Nur unbenutzte" picker. The client-side `excludeIds` (from `collectImageIds`,
+      v0.4.1) already updates reactively on block delete — but the picker's
+      `orphansOnly` ALSO filters server-side via persisted refs (`imageIdsInUse`),
+      so for an already-saved post the deleted block's images stay hidden until the
+      post is re-saved. Fix: track in-session-removed ids and force-include them in
+      the picker (inverse of `excludeIds`), or otherwise reconcile client state with
+      the server orphan filter. Couples with the v0.4.1 unused-picker fix.
+      - ⚠ **Risk (MED — correctness):** blindly force-including every in-session-removed
+        id is wrong — the server orphan filter is GLOBAL (counts other posts, post
+        covers, AND Settings background images), so an image you removed from THIS post
+        may still be referenced elsewhere; force-showing it as „unbenutzt" would invite
+        treating a still-used image as free. **Address:** don't invert `excludeIds`
+        wholesale — reconcile against the server's true orphan status (only re-include
+        ids the server doesn't report as used by *other* references), e.g. recompute
+        orphans as `serverOrphans ∪ (removedThisSession ∩ notReferencedElsewhere)`. A
+        cheap path: just refetch the orphan list after a delete instead of synthesising
+        it client-side.
+- [ ] **Make blog-level "Einstellungen" admin-only — but KEEP "Passwort ändern" for
+      everyone.** Updated 2026-06-01: the page is no longer purely admin material.
+      `Settings.svelte` now hosts BOTH the blog settings (Seitentitel, Akzentfarbe,
+      Hintergrundbilder — should be admin-only, like "Nutzer") AND the self-service
+      "Passwort ändern" section (must stay available to all logged-in creators, added
+      v0.5.0). So do NOT hide the whole nav link/route the way "Nutzer" is hidden.
+      Instead: keep the `#/admin/einstellungen` link + route for everyone, and inside
+      `Settings.svelte` gate only the blog-settings `<form>` (the Seitentitel/
+      Akzentfarbe/Hintergrundbilder block + its "Speichern") behind `auth.isAdmin`,
+      leaving the "Passwort ändern" section always rendered. (Possible nicety: when a
+      non-admin lands there, retitle/trim the page so it reads as a "Passwort"/"Konto"
+      page rather than empty "Einstellungen".) Defense in depth: the backend
+      `PUT /api/settings` (`routes/settings.ts`) currently only uses
+      `requireAuth` + `requireCsrf` — add an admin check so a non-admin can't update
+      settings via the API even though the form is hidden. TDD.
+      - ⚠ **Risk (MED — impl):** gate only the WRITE path, NOT the read. `Settings.svelte`
+        `onMount` calls `api.getSettings()` (`GET /api/settings`, requireAuth)
+        unconditionally; if you make that GET admin-only, a non-admin's page errors
+        before the always-shown „Passwort ändern" section can render — i.e. you'd lock
+        authors out of changing their own password. **Address:** admin-gate only
+        `PUT /api/settings` + the blog-settings `<form>`; leave the GET available to any
+        authenticated user (or guard the fetch so a 403 doesn't block the password
+        form). Reader branding is unaffected — it comes from the separate unauthenticated
+        `GET /api/public/settings` (`routes/public.ts:122`).
+
 - [X] **"loki-query" skill — DONE as a generic `cluster-debug` user-level skill.**
   Created `C:\Users\Dev\.claude\skills\cluster-debug\SKILL.md` (user level, NOT in
   this repo — works across every workload on the home-lan k3s cluster). Covers Loki
@@ -23,14 +245,51 @@ the plan and the per-phase memory note.
   "Benutzername bereits vergeben." (409 conflict). TDD; German strings, inline.
   Not part of the cutover — treat as a separate post-cutover polish task.
 
-### Cutover (#21) — remaining
+- [X] **Cover the SPA back-button in the unsaved-changes guard — WON'T DO.** The v0.5.0
+      guard (`lib/navGuard.ts`) protects in-app nav + full reload/close (`beforeunload`)
+      but not the SPA back button (documented gap, `navGuard.ts:11-12`). Decided
+      2026-06-01 to leave it: a `hashchange`/`popstate` re-push hack is fiddly and
+      error-prone for a rare edge case, and the existing coverage handles the common
+      ways edits are lost. Accepted as a known limitation.
 
-- [ ] Dev trial import: `npm run import-wp -- --dry-run` → review `migration-report.json`
+### CI / release maintenance
+
+- [ ] **Bump the `docker/*` actions off Node 20 before 2026-06-16.** The `release`
+      workflow (`.github/workflows/release.yml`) uses `docker/login-action@v3`,
+      `docker/metadata-action@v5`, `docker/setup-buildx-action@v3`,
+      `docker/build-push-action@v6`, which run on Node.js 20. GitHub forces Node 24
+      on 2026-06-16 and removes Node 20 on 2026-09-16 (flagged as a run annotation on
+      the v0.6.0 release). Update to versions that support Node 24 (check each action's
+      latest release). Low effort; do before mid-June. Check the deploy repo's
+      `image-bump.yml` actions too while at it.
+
+### Cutover (#21) — DONE 2026-06-01
+
+- [X] Dev trial import: `npm run import-wp -- --dry-run` → review `migration-report.json`
       → bounded live trial `--limit N` → review in reader + admin on dev.
-- [ ] Prod full WP import (published posts on original dates).
-- [ ] Enable deploy-repo GitHub setting: Settings → Actions → General → Workflow
-      permissions → "Allow GitHub Actions to create and approve pull requests"
-      (so future auto-bump PRs open cleanly; dev bumps pushed directly for now).
+      **DONE & VERIFIED 2026-05-31.** Dry-run against `https://reisen.caroundalex.de`
+      (237 posts → 8422 blocks, 5456 used images, 0 skipped, `largeImages:[]`);
+      bounded `--limit=5` live trial against `https://dev-reisen.caro-alex.de` —
+      5/5 posts published on original dates, all images over the Cloudflare tunnel,
+      covers + content + galleries serve as WebP. Importer hardened along the way
+      (SSE chunk-split fix, retry/backoff, gallery coalescing, resumable dedup
+      manifest, live progress). Details in memory `wp-import-plan`.
+- [X] Prod full WP import (published posts on original dates). **DONE 2026-06-01.**
+- [X] **Raise the prod CPU limit to 2 cores** (deploy repo `kube-at-home-travelblog`,
+      `environments/prod/app/`, NOT this repo). Rationale: dev-import profiling
+      (2026-05-31) showed import speed is bound by the single-core sharp→WebP
+      transcode (~0.65–0.77 s/image, the awaited SSE `done`); CPU peaked ~0.57 of the
+      1-core limit, memory flat ~29%, network trivial. The Pi nodes have 4 cores, so
+      lifting the per-pod limit to 2 lets sharp use more threads per transcode and
+      cuts per-image time — the cheapest speedup for the ~5,456-image prod run
+      (~75 min of transcoding at 1 core) without touching the (sequential) importer.
+      Do BEFORE the prod full import. App-repo change = none.
+- [X] Enable deploy-repo GitHub setting: Settings → Actions → General → Workflow
+      permissions → "Allow GitHub Actions to create and approve pull requests".
+      **DECIDED 2026-05-31: leave OFF, keep the manual-PR path.** The auto-bump
+      workflow still pushes branch `automated/bump-dev-image-X.Y.Z` with the
+      correct one-line change; open + merge that PR yourself (Actions can't). The
+      `travelblog-release` skill documents the recovery.
 
 ### S3 image upload — RESOLVED
 
