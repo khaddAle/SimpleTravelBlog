@@ -28,7 +28,9 @@ test('an unused upload is listed under "Nur unbenutzte" and can be deleted', asy
   // Library: filter to orphans, the upload is there, delete it.
   await page.getByRole('link', { name: 'Bilder' }).click();
   await expect(page.getByRole('heading', { name: 'Bildbibliothek' })).toBeVisible();
-  await page.getByRole('button', { name: 'Verwaist' }).click();
+  // `exact` so the segmented filter button isn't confused with the per-image
+  // "<verwaist-…> löschen" buttons (role-name matching is substring + cased).
+  await page.getByRole('button', { name: 'Verwaist', exact: true }).click();
   await expect(page.getByText(file.name)).toBeVisible();
 
   await page.getByRole('button', { name: `${file.name} löschen` }).click();

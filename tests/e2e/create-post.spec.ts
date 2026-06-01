@@ -13,7 +13,7 @@ test('create → publish → reader sees the post', async ({ page }) => {
   await publish(page);
 
   // It shows up in the admin list as published.
-  const row = page.getByRole('row', { name: new RegExp(title) });
+  const row = page.locator('.post-row').filter({ hasText: title });
   await expect(row).toContainText('Veröffentlicht');
 
   // The anonymous reader sees it on the landing page and can open it.
@@ -35,7 +35,7 @@ test('an unpublished draft is hidden from the reader', async ({ page }) => {
   await page.getByRole('button', { name: 'Entwurf speichern' }).click();
   await expect(page).toHaveURL(/#\/admin$/);
 
-  await expect(page.getByRole('row', { name: new RegExp(title) })).toContainText('Entwurf');
+  await expect(page.locator('.post-row').filter({ hasText: title })).toContainText('Entwurf');
 
   // Not present in the public archive.
   await page.goto('/#/archiv');
