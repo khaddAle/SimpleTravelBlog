@@ -254,14 +254,19 @@ Decisions captured with the user 2026-06-01 (recorded inline per item). All TDD,
 
 ### CI / release maintenance
 
-- [ ] **Bump the `docker/*` actions off Node 20 before 2026-06-16.** The `release`
-      workflow (`.github/workflows/release.yml`) uses `docker/login-action@v3`,
-      `docker/metadata-action@v5`, `docker/setup-buildx-action@v3`,
-      `docker/build-push-action@v6`, which run on Node.js 20. GitHub forces Node 24
-      on 2026-06-16 and removes Node 20 on 2026-09-16 (flagged as a run annotation on
-      the v0.6.0 release). Update to versions that support Node 24 (check each action's
-      latest release). Low effort; do before mid-June. Check the deploy repo's
-      `image-bump.yml` actions too while at it.
+- [X] **Bump the `docker/*` actions off Node 20 — DONE in THIS repo (Phase 2 #4,
+      2026-06-01).** `release.yml` bumped to the Node-24 majors:
+      `docker/login-action@v4`, `docker/metadata-action@v6`,
+      `docker/setup-buildx-action@v4`, `docker/build-push-action@v7` (each action's
+      v4/v6/v7.0.0 introduced `runs.using: node24`, requiring Actions Runner ≥2.327.1 —
+      GitHub-hosted `ubuntu-24.04-arm` is fine). Also bumped `e2e.yml`
+      `actions/upload-artifact@v4 → @v6` (v6 = Node 24; v4 was Node 20, v5 only
+      preliminary). `actions/checkout@v5` + `actions/setup-node@v5` were already Node 24.
+      Kept floating major tags to match repo style (SHA-pinning = optional future
+      hardening). GitHub forces Node 24 on 2026-06-16, removes Node 20 on 2026-09-16.
+      - ⚠ **STILL TODO (separate repo): the deploy repo `kube-at-home-travelblog`
+        `image-bump.yml`** — out of this workspace, can't edit from here. Bump any
+        Node-20 actions there before 2026-06-16.
 
 ### Cutover (#21) — DONE 2026-06-01
 
