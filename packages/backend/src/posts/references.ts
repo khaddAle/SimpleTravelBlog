@@ -12,9 +12,15 @@ export function collectImageIds(blocks: Block[]): string[] {
   return ids;
 }
 
-/** Set of every image shortId referenced by any post — used to find orphans. */
-export async function imageIdsInUse(): Promise<Set<string>> {
-  const posts = await Post.find({}, { blocks: 1, coverImageId: 1 }).lean();
+/**
+ * Set of every image shortId referenced by any post — used to find orphans.
+ * `excludePostId` discounts one post's own references (the post being edited),
+ * so images it no longer uses surface as orphans while ones pinned by any other
+ * post, cover or settings background stay in-use.
+ */
+export async function imageIdsInUse(excludePostId?: string): Promise<Set<string>> {
+  const postFilter = excludePostId ? { shortId: { $ne: excludePostId } } : {};
+  const posts = await Post.find(postFilter, { blocks: 1, coverImageId: 1 }).lean();
   const used = new Set<string>();
   for (const post of posts) {
     for (const id of collectImageIds((post.blocks ?? []) as Block[])) used.add(id);

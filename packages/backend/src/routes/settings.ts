@@ -4,7 +4,11 @@ import { Settings, SETTINGS_ID } from '../db/models/Settings.js';
 import { toSettingsDto, DEFAULT_SETTINGS } from '../dto.js';
 import type { RouteContext } from './context.js';
 
-/** Site branding singleton: any editor may read; mutation requires CSRF. */
+/**
+ * Site branding singleton: any editor may read (the admin UI shares this page
+ * with the self-service "Passwort ändern" form), but only an admin may change
+ * the blog branding.
+ */
 export function registerSettingsRoutes(app: FastifyInstance, ctx: RouteContext): void {
   const { hooks } = ctx;
 
@@ -15,7 +19,7 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: RouteContext):
 
   app.put(
     '/api/settings',
-    { preHandler: [hooks.requireAuth, hooks.requireCsrf] },
+    { preHandler: [hooks.requireAuth, hooks.requireCsrf, hooks.requireRole('admin')] },
     async (req) => {
       const parsed = updateSettingsRequestSchema.safeParse(req.body);
       if (!parsed.success) throw app.httpErrors.badRequest('invalid settings payload');

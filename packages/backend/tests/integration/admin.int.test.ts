@@ -123,16 +123,20 @@ describe('admin (users + settings) integration', () => {
   });
 
   describe('settings', () => {
-    it('returns default branding then persists an update', async () => {
+    it('lets any editor read branding (GET is not admin-gated)', async () => {
       const editor = await authedAgent(app, { username: 'ed', role: 'editor' });
 
       const initial = await editor.agent.get('/api/settings');
       expect(initial.status).toBe(200);
       expect(initial.body.settings.siteTitle).toBeTruthy();
+    });
 
-      const updated = await editor.agent
+    it('persists an update for an admin', async () => {
+      const admin = await authedAgent(app, { username: 'boss', role: 'admin' });
+
+      const updated = await admin.agent
         .put('/api/settings')
-        .set('x-csrf-token', editor.csrf)
+        .set('x-csrf-token', admin.csrf)
         .send({ siteTitle: 'Unsere Reise', accentColor: '#2b6cb0' });
       expect(updated.status).toBe(200);
       expect(updated.body.settings).toMatchObject({
@@ -140,16 +144,25 @@ describe('admin (users + settings) integration', () => {
         accentColor: '#2b6cb0',
       });
 
-      const reread = await editor.agent.get('/api/settings');
+      const reread = await admin.agent.get('/api/settings');
       expect(reread.body.settings.siteTitle).toBe('Unsere Reise');
     });
 
-    it('round-trips backgroundImageIds through PUT and GET', async () => {
+    it('forbids a non-admin editor from updating branding (403)', async () => {
       const editor = await authedAgent(app, { username: 'ed', role: 'editor' });
-
-      const updated = await editor.agent
+      const res = await editor.agent
         .put('/api/settings')
         .set('x-csrf-token', editor.csrf)
+        .send({ siteTitle: 'X', accentColor: '#000000' });
+      expect(res.status).toBe(403);
+    });
+
+    it('round-trips backgroundImageIds through PUT and GET', async () => {
+      const admin = await authedAgent(app, { username: 'boss', role: 'admin' });
+
+      const updated = await admin.agent
+        .put('/api/settings')
+        .set('x-csrf-token', admin.csrf)
         .send({
           siteTitle: 'Reise',
           accentColor: '#2b6cb0',
@@ -158,19 +171,19 @@ describe('admin (users + settings) integration', () => {
       expect(updated.status).toBe(200);
       expect(updated.body.settings.backgroundImageIds).toEqual(['bg1', 'bg2']);
 
-      const reread = await editor.agent.get('/api/settings');
+      const reread = await admin.agent.get('/api/settings');
       expect(reread.body.settings.backgroundImageIds).toEqual(['bg1', 'bg2']);
 
-      const cleared = await editor.agent
+      const cleared = await admin.agent
         .put('/api/settings')
-        .set('x-csrf-token', editor.csrf)
+        .set('x-csrf-token', admin.csrf)
         .send({ siteTitle: 'Reise', accentColor: '#2b6cb0', backgroundImageIds: [] });
       expect(cleared.body.settings.backgroundImageIds).toBeUndefined();
     });
 
     it('requires the CSRF header to update settings (403)', async () => {
-      const editor = await authedAgent(app, { username: 'ed', role: 'editor' });
-      const res = await editor.agent
+      const admin = await authedAgent(app, { username: 'boss', role: 'admin' });
+      const res = await admin.agent
         .put('/api/settings')
         .send({ siteTitle: 'X', accentColor: '#000000' });
       expect(res.status).toBe(403);

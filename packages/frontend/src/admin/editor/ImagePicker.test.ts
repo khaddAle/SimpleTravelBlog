@@ -98,6 +98,21 @@ describe('ImagePicker browsing', () => {
     });
   });
 
+  it('forwards excludePostId to the API so the edited post\'s own images can be freed', async () => {
+    render(ImagePicker, {
+      onSelect: vi.fn(),
+      onCancel: vi.fn(),
+      initialOrphansOnly: true,
+      excludePostId: 'post42',
+    });
+    await screen.findByLabelText('alpha.jpg');
+    await waitFor(() => {
+      expect(api.listImages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ orphansOnly: true, excludePostId: 'post42' }),
+      );
+    });
+  });
+
   it('starts with the orphans-only filter checked when initialOrphansOnly is set', async () => {
     render(ImagePicker, { onSelect: vi.fn(), onCancel: vi.fn(), initialOrphansOnly: true });
     await screen.findByLabelText('alpha.jpg');

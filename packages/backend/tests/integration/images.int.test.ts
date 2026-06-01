@@ -147,6 +147,40 @@ describe('images integration', () => {
     expect(orphans.body.images.map((i: { id: string }) => i.id)).toEqual([orphan]);
   });
 
+  it('excludePostId frees that post\'s own images as orphans, but not ones used elsewhere', async () => {
+    // A is referenced only by post P; B is referenced by both P and Q.
+    const a = await uploadImage('a.jpg');
+    const b = await uploadImage('b.jpg');
+    const p = await auth.agent
+      .post('/api/posts')
+      .set('x-csrf-token', auth.csrf)
+      .send({
+        title: 'P',
+        postDate: '2026-05-01T00:00:00.000Z',
+        country: 'DE',
+        placeName: 'Ort',
+        lat: 47,
+        lng: 10,
+        blocks: [
+          { type: 'image', imageId: a },
+          { type: 'image', imageId: b },
+        ],
+      });
+    await postWithImage(b); // post Q also uses B
+
+    // Without the hint both are in-use → neither is an orphan.
+    const plain = await auth.agent.get('/api/images?orphansOnly=true');
+    expect(plain.body.images.map((i: { id: string }) => i.id)).toEqual([]);
+
+    // Discounting P's references frees A (only P used it) but NOT B (Q still does).
+    const freed = await auth.agent.get(
+      `/api/images?orphansOnly=true&excludePostId=${p.body.post.id}`,
+    );
+    const ids = freed.body.images.map((i: { id: string }) => i.id);
+    expect(ids).toContain(a);
+    expect(ids).not.toContain(b);
+  });
+
   it('filters images by filename and runs each sort order', async () => {
     const alpha = await uploadImage('alpha.jpg');
     await uploadImage('beta.jpg');
@@ -207,9 +241,11 @@ describe('images integration', () => {
 
   it('treats a settings background image as in-use: non-orphan and undeletable', async () => {
     const bg = await uploadImage('bg.jpg');
-    const put = await auth.agent
+    // Branding (incl. background images) is admin-only now.
+    const admin = await authedAgent(app, { username: 'sbadmin', role: 'admin' });
+    const put = await admin.agent
       .put('/api/settings')
-      .set('x-csrf-token', auth.csrf)
+      .set('x-csrf-token', admin.csrf)
       .send({ siteTitle: 'Reise', accentColor: '#2b6cb0', backgroundImageIds: [bg] });
     expect(put.status).toBe(200);
 

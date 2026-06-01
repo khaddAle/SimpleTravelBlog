@@ -39,6 +39,8 @@ export interface ListImagesQuery {
   q?: string;
   orphansOnly?: boolean;
   sort?: 'newest' | 'oldest' | 'filename';
+  /** Discount this post's persisted refs when filtering orphans (editor only). */
+  excludePostId?: string;
 }
 
 export interface PublicSearchQuery {

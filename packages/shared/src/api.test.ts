@@ -247,6 +247,10 @@ describe('imageListQuerySchema', () => {
   it('honors an explicit orphans filter', () => {
     expect(imageListQuerySchema.parse({ orphansOnly: 'true' }).orphansOnly).toBe(true);
   });
+  it('leaves excludePostId undefined by default and passes a given one through', () => {
+    expect(imageListQuerySchema.parse({}).excludePostId).toBeUndefined();
+    expect(imageListQuerySchema.parse({ excludePostId: 'abc123' }).excludePostId).toBe('abc123');
+  });
 });
 
 describe('createUserRequestSchema', () => {

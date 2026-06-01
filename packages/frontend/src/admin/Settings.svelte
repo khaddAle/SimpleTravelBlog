@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api, ApiError } from '../lib/api.js';
+  import { auth } from '../lib/auth.svelte.js';
   import { settings as branding } from '../lib/settings.svelte.js';
   import { imageUrl } from '../lib/images.js';
   import AdminLayout from './AdminLayout.svelte';
@@ -102,47 +103,50 @@
   {#if loading}
     <p>Lädt…</p>
   {:else}
-    <form class="settings" onsubmit={save}>
-      {#if error}
-        <p role="alert" class="err">{error}</p>
-      {/if}
-      {#if saved}
-        <p class="ok" role="status">Gespeichert.</p>
-      {/if}
-      <label>
-        Seitentitel
-        <input type="text" aria-label="Seitentitel" bind:value={siteTitle} />
-      </label>
-      <label>
-        Akzentfarbe
-        <input type="color" aria-label="Akzentfarbe" bind:value={accentColor} />
-      </label>
-
-      <div class="bg-field">
-        <span class="bg-label">Hintergrundbilder</span>
-        {#if backgroundImageIds.length > 0}
-          <ul class="bg-grid">
-            {#each backgroundImageIds as id (id)}
-              <li>
-                <img class="bg-thumb" src={imageUrl(id, 'thumb')} alt="" />
-                <button
-                  type="button"
-                  aria-label="Hintergrundbild entfernen"
-                  onclick={() => removeBackground(id)}>Entfernen</button
-                >
-              </li>
-            {/each}
-          </ul>
-        {:else}
-          <p class="bg-empty">Keine Hintergrundbilder gewählt.</p>
+    {#if auth.isAdmin}
+      <!-- Blog branding is admin-only; editors only see the password form below. -->
+      <form class="settings" onsubmit={save}>
+        {#if error}
+          <p role="alert" class="err">{error}</p>
         {/if}
-        <button type="button" onclick={() => (pickerOpen = true)}>
-          Hintergrundbilder hinzufügen
-        </button>
-      </div>
+        {#if saved}
+          <p class="ok" role="status">Gespeichert.</p>
+        {/if}
+        <label>
+          Seitentitel
+          <input type="text" aria-label="Seitentitel" bind:value={siteTitle} />
+        </label>
+        <label>
+          Akzentfarbe
+          <input type="color" aria-label="Akzentfarbe" bind:value={accentColor} />
+        </label>
 
-      <button type="submit">Speichern</button>
-    </form>
+        <div class="bg-field">
+          <span class="bg-label">Hintergrundbilder</span>
+          {#if backgroundImageIds.length > 0}
+            <ul class="bg-grid">
+              {#each backgroundImageIds as id (id)}
+                <li>
+                  <img class="bg-thumb" src={imageUrl(id, 'thumb')} alt="" />
+                  <button
+                    type="button"
+                    aria-label="Hintergrundbild entfernen"
+                    onclick={() => removeBackground(id)}>Entfernen</button
+                  >
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="bg-empty">Keine Hintergrundbilder gewählt.</p>
+          {/if}
+          <button type="button" onclick={() => (pickerOpen = true)}>
+            Hintergrundbilder hinzufügen
+          </button>
+        </div>
+
+        <button type="submit">Speichern</button>
+      </form>
+    {/if}
 
     <section class="password">
       <h2>Passwort ändern</h2>

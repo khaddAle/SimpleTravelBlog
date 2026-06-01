@@ -20,6 +20,12 @@
      * would still appear as unused.
      */
     excludeIds?: string[];
+    /**
+     * When the orphan filter is on, the server discounts this post's own
+     * persisted image references — so images dropped from the post being edited
+     * become selectable again without exposing ones still used elsewhere.
+     */
+    excludePostId?: string | undefined;
     /** Forwarded to UploadProgress for tests. */
     eventSourceFactory?: EventSourceFactory;
   }
@@ -31,6 +37,7 @@
     initialOrphansOnly = false,
     initialSelected = [],
     excludeIds = [],
+    excludePostId,
     eventSourceFactory,
   }: Props = $props();
 
@@ -70,7 +77,14 @@
   );
 
   async function load(): Promise<void> {
-    const res = await api.listImages({ page, pageSize, q, orphansOnly, sort });
+    const res = await api.listImages({
+      page,
+      pageSize,
+      q,
+      orphansOnly,
+      sort,
+      ...(excludePostId ? { excludePostId } : {}),
+    });
     images = res.items;
     total = res.total;
   }

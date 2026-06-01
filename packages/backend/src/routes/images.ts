@@ -131,12 +131,12 @@ export function registerImageRoutes(app: FastifyInstance, ctx: RouteContext): vo
   app.get('/api/images', auth, async (req) => {
     const parsed = imageListQuerySchema.safeParse(req.query);
     if (!parsed.success) throw app.httpErrors.badRequest('invalid query');
-    const { page, pageSize, q, orphansOnly, sort } = parsed.data;
+    const { page, pageSize, q, orphansOnly, sort, excludePostId } = parsed.data;
 
     const filter: Record<string, unknown> = {};
     if (q) filter.originalFilename = { $regex: escapeRegex(q), $options: 'i' };
     if (orphansOnly) {
-      const used = await imageIdsInUse();
+      const used = await imageIdsInUse(excludePostId);
       filter.shortId = { $nin: [...used] };
     }
 

@@ -184,49 +184,36 @@ Decisions captured with the user 2026-06-01 (recorded inline per item). All TDD,
       (naming the block type, e.g. „Galerie entfernen?") before splicing — matching the
       existing `PostList` delete-confirm convention. TDD in `BlockEditor.test.ts`
       (confirm → removes; decline → unchanged). German strings inline.
-- [ ] **Free a deleted element's images for re-selection.** After removing a
-      gallery/image block, its images should become selectable again in the
-      "Nur unbenutzte" picker. The client-side `excludeIds` (from `collectImageIds`,
-      v0.4.1) already updates reactively on block delete — but the picker's
-      `orphansOnly` ALSO filters server-side via persisted refs (`imageIdsInUse`),
-      so for an already-saved post the deleted block's images stay hidden until the
-      post is re-saved. Fix: track in-session-removed ids and force-include them in
-      the picker (inverse of `excludeIds`), or otherwise reconcile client state with
-      the server orphan filter. Couples with the v0.4.1 unused-picker fix.
-      - ⚠ **Risk (MED — correctness):** blindly force-including every in-session-removed
-        id is wrong — the server orphan filter is GLOBAL (counts other posts, post
-        covers, AND Settings background images), so an image you removed from THIS post
-        may still be referenced elsewhere; force-showing it as „unbenutzt" would invite
-        treating a still-used image as free. **Address:** don't invert `excludeIds`
-        wholesale — reconcile against the server's true orphan status (only re-include
-        ids the server doesn't report as used by *other* references), e.g. recompute
-        orphans as `serverOrphans ∪ (removedThisSession ∩ notReferencedElsewhere)`. A
-        cheap path: just refetch the orphan list after a delete instead of synthesising
-        it client-side.
-- [ ] **Make blog-level "Einstellungen" admin-only — but KEEP "Passwort ändern" for
-      everyone.** Updated 2026-06-01: the page is no longer purely admin material.
-      `Settings.svelte` now hosts BOTH the blog settings (Seitentitel, Akzentfarbe,
-      Hintergrundbilder — should be admin-only, like "Nutzer") AND the self-service
-      "Passwort ändern" section (must stay available to all logged-in creators, added
-      v0.5.0). So do NOT hide the whole nav link/route the way "Nutzer" is hidden.
-      Instead: keep the `#/admin/einstellungen` link + route for everyone, and inside
-      `Settings.svelte` gate only the blog-settings `<form>` (the Seitentitel/
-      Akzentfarbe/Hintergrundbilder block + its "Speichern") behind `auth.isAdmin`,
-      leaving the "Passwort ändern" section always rendered. (Possible nicety: when a
-      non-admin lands there, retitle/trim the page so it reads as a "Passwort"/"Konto"
-      page rather than empty "Einstellungen".) Defense in depth: the backend
-      `PUT /api/settings` (`routes/settings.ts`) currently only uses
-      `requireAuth` + `requireCsrf` — add an admin check so a non-admin can't update
-      settings via the API even though the form is hidden. TDD.
-      - ⚠ **Risk (MED — impl):** gate only the WRITE path, NOT the read. `Settings.svelte`
-        `onMount` calls `api.getSettings()` (`GET /api/settings`, requireAuth)
-        unconditionally; if you make that GET admin-only, a non-admin's page errors
-        before the always-shown „Passwort ändern" section can render — i.e. you'd lock
-        authors out of changing their own password. **Address:** admin-gate only
-        `PUT /api/settings` + the blog-settings `<form>`; leave the GET available to any
-        authenticated user (or guard the fetch so a 403 doesn't block the password
-        form). Reader branding is unaffected — it comes from the separate unauthenticated
-        `GET /api/public/settings` (`routes/public.ts:122`).
+- [X] **Free a deleted element's images for re-selection — DONE (Phase 3 #5,
+      2026-06-01).** Root cause: the picker's `orphansOnly` view comes from the SERVER
+      (`imageIdsInUse`, GLOBAL across all posts/covers/Settings backgrounds), which
+      still counts the post being edited — so a block's images stayed hidden until
+      re-save, and inverting the client `excludeIds` couldn't surface them (the server
+      simply didn't return them). **Fix (global-safe, not a blind invert):** added an
+      optional `excludePostId` to `GET /api/images` (`imageListQuerySchema`); when the
+      orphan filter is on, `imageIdsInUse(excludePostId?)` discounts ONLY that post's
+      own persisted refs (`Post.find({ shortId: { $ne } })`), so images dropped from
+      the edited post surface as orphans while ones still pinned by any OTHER post,
+      cover or settings background stay hidden. `ImagePicker` forwards the prop;
+      `PostEditor` passes `excludePostId={editId}`. The existing client `excludeIds`
+      (live session refs) still hides images currently placed, so still-used ones never
+      reappear. TDD: shared `api.test.ts`, backend `images.int.test.ts` (frees own /
+      keeps used-elsewhere), frontend `ImagePicker.test.ts`. The delete-guard
+      (`postsReferencingImage`+settings) is untouched, so nothing in-use can be deleted.
+- [X] **Make blog-level "Einstellungen" admin-only — but KEEP "Passwort ändern" for
+      everyone — DONE (Phase 3 #6, 2026-06-01).** Frontend: `Settings.svelte` wraps only
+      the blog-branding `<form>` (Seitentitel/Akzentfarbe/Hintergrundbilder + Speichern)
+      in `{#if auth.isAdmin}`; the „Passwort ändern" section stays always rendered, and
+      the nav link/route stays visible to everyone. Backend (defense in depth):
+      `PUT /api/settings` gained `hooks.requireRole('admin')` (now
+      `[requireAuth, requireCsrf, requireRole('admin')]`, the same gate as the Nutzer
+      routes) → a non-admin PUT is 403. **The GET stays `requireAuth`-only** (not
+      admin-gated) so authors still reach their password form, and reader branding is
+      unaffected (separate unauthenticated `GET /api/public/settings`). TDD: backend
+      `admin.int.test.ts` (admin persists / editor 403 / GET open) — and the
+      `images.int.test.ts` settings-background test flipped to an admin agent for its
+      PUT; frontend `Settings.test.ts` (form hidden for editor, shown for admin,
+      password form present for both).
 
 - [X] **"loki-query" skill — DONE as a generic `cluster-debug` user-level skill.**
   Created `C:\Users\Dev\.claude\skills\cluster-debug\SKILL.md` (user level, NOT in

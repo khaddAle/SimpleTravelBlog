@@ -155,6 +155,10 @@ export const imageListQuerySchema = paginationQuerySchema.extend({
   q: z.string().max(200).optional(),
   orphansOnly: queryBooleanSchema,
   sort: z.enum(['newest', 'oldest', 'filename']).default('newest'),
+  // When the orphan filter is on, discount this post's persisted image
+  // references — so the editor's "Nur unbenutzte" picker frees images dropped
+  // from the post being edited without exposing ones still used elsewhere.
+  excludePostId: z.string().max(64).optional(),
 });
 export type ImageListQuery = z.infer<typeof imageListQuerySchema>;
 

@@ -146,6 +146,32 @@ describe('Settings', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Speichern fehlgeschlagen.');
   });
 
+  describe('admin gating of blog branding', () => {
+    beforeEach(() => {
+      vi.spyOn(api, 'getSettings').mockResolvedValue({ siteTitle: 'Alt', accentColor: '#000000' });
+    });
+
+    it('hides the blog-branding form from a non-admin editor', async () => {
+      auth.user = { id: 'u2', username: 'ed', role: 'editor' };
+      render(Settings);
+      // The self-service password form stays available to every editor…
+      expect(await screen.findByLabelText('Aktuelles Passwort')).toBeInTheDocument();
+      // …but the admin-only blog branding fields are gone.
+      expect(screen.queryByLabelText('Seitentitel')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Speichern' })).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: 'Hintergrundbilder hinzufügen' }),
+      ).toBeNull();
+    });
+
+    it('shows the blog-branding form to an admin', async () => {
+      auth.user = { id: 'u1', username: 'mum', role: 'admin' };
+      render(Settings);
+      expect(await screen.findByLabelText('Seitentitel')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Speichern' })).toBeInTheDocument();
+    });
+  });
+
   describe('change password', () => {
     beforeEach(() => {
       vi.spyOn(api, 'getSettings').mockResolvedValue({ siteTitle: 'Alt', accentColor: '#000000' });

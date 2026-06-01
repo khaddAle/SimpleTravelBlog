@@ -244,6 +244,7 @@
           initialOrphansOnly={pickerOrphansOnly}
           initialSelected={pickerSelected}
           excludeIds={usedImageIds}
+          excludePostId={editId}
           onSelect={onPickerSelect}
           onCancel={onPickerCancel}
         />
