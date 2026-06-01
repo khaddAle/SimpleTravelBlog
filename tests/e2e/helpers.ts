@@ -54,7 +54,17 @@ export function uniqueFilename(stem: string): string {
 /** From the admin post list, open the "new post" editor. */
 export async function gotoNewPost(page: Page): Promise<void> {
   await page.getByRole('link', { name: 'Neuer Beitrag' }).click();
-  await expect(page.getByRole('heading', { name: 'Neuer Beitrag' })).toBeVisible();
+  // The Fernweh editor opens straight to the block sheet — there is no page
+  // heading; the sidebar's publish action is the stable "editor ready" signal.
+  await expect(page.getByRole('button', { name: 'Veröffentlichen' })).toBeVisible();
+}
+
+/**
+ * Open the block inserter menu at the end of the block list. Blocks are added
+ * through a per-gap "+" (aria-label "Block einfügen"); the trailing gap appends.
+ */
+export async function openInserterMenu(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Block einfügen' }).last().click();
 }
 
 /** Fill the metadata sidebar's required fields (title/country/place). */
@@ -69,7 +79,8 @@ export async function fillMetadata(
 
 /** Append a paragraph block and type its text. */
 export async function addParagraph(page: Page, text: string): Promise<void> {
-  await page.getByRole('button', { name: '+ Absatz' }).click();
+  await openInserterMenu(page);
+  await page.getByRole('button', { name: 'Absatz', exact: true }).click();
   await page.getByLabel('Absatz').last().fill(text);
 }
 
@@ -80,7 +91,8 @@ export async function addParagraph(page: Page, text: string): Promise<void> {
  */
 export async function addImageBlockByUpload(page: Page, name = 'strand.jpg'): Promise<string> {
   const file = await makeJpegUpload(name);
-  await page.getByRole('button', { name: '+ Bild' }).click();
+  await openInserterMenu(page);
+  await page.getByRole('button', { name: 'Bild', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Bildauswahl' });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel('Hochladen').setInputFiles(file);

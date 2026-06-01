@@ -30,7 +30,7 @@ test('upload an image through the picker and publish a post with it', async ({ p
   await expect(page).toHaveURL(/#\/beitrag\//);
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
 
-  const img = page.locator('article.post img').first();
+  const img = page.locator('main.article img').first();
   await expect(img).toBeVisible();
   const src = await img.getAttribute('src');
   expect(src).toContain('/api/public/images/');

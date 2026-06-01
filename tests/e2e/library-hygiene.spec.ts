@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import {
   login,
   gotoNewPost,
+  openInserterMenu,
   fillMetadata,
   addImageBlockByUpload,
   makeJpegUpload,
@@ -17,7 +18,8 @@ test('an unused upload is listed under "Nur unbenutzte" and can be deleted', asy
   await gotoNewPost(page);
 
   // Upload into the picker, then cancel — the image is persisted but unreferenced.
-  await page.getByRole('button', { name: '+ Bild' }).click();
+  await openInserterMenu(page);
+  await page.getByRole('button', { name: 'Bild', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Bildauswahl' });
   await dialog.getByLabel('Hochladen').setInputFiles(file);
   await expect(dialog.getByRole('button', { name: file.name })).toBeVisible({ timeout: 30_000 });
@@ -25,8 +27,8 @@ test('an unused upload is listed under "Nur unbenutzte" and can be deleted', asy
 
   // Library: filter to orphans, the upload is there, delete it.
   await page.getByRole('link', { name: 'Bilder' }).click();
-  await expect(page.getByRole('heading', { name: 'Bildverwaltung' })).toBeVisible();
-  await page.getByText('Nur unbenutzte').click();
+  await expect(page.getByRole('heading', { name: 'Bildbibliothek' })).toBeVisible();
+  await page.getByRole('button', { name: 'Verwaist' }).click();
   await expect(page.getByText(file.name)).toBeVisible();
 
   await page.getByRole('button', { name: `${file.name} löschen` }).click();
@@ -44,7 +46,7 @@ test('deleting a referenced image is refused with the referencing post', async (
   await publish(page);
 
   await page.getByRole('link', { name: 'Bilder' }).click();
-  await expect(page.getByRole('heading', { name: 'Bildverwaltung' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Bildbibliothek' })).toBeVisible();
 
   await page.getByRole('button', { name: `${file} löschen` }).click();
 

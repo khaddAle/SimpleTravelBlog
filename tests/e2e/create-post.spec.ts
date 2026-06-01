@@ -22,7 +22,7 @@ test('create → publish → reader sees the post', async ({ page }) => {
   await expect(page).toHaveURL(/#\/beitrag\//);
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
   await expect(page.getByText(body)).toBeVisible();
-  await expect(page.getByText('Garmisch, DE')).toBeVisible();
+  await expect(page.getByText('Garmisch, Deutschland')).toBeVisible();
 });
 
 test('an unpublished draft is hidden from the reader', async ({ page }) => {
@@ -39,6 +39,6 @@ test('an unpublished draft is hidden from the reader', async ({ page }) => {
 
   // Not present in the public archive.
   await page.goto('/#/archiv');
-  await expect(page.getByRole('heading', { name: 'Alle Beiträge' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nach Ländern & Reisen' })).toBeVisible();
   await expect(page.getByRole('link', { name: new RegExp(title) })).toHaveCount(0);
 });
