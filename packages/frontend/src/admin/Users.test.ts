@@ -59,6 +59,62 @@ describe('Users', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Benutzername bereits vergeben.');
   });
 
+  it('asks for a username before calling the API when it is empty', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'listUsers').mockResolvedValue([]);
+    const create = vi.spyOn(api, 'createUser');
+    render(Users);
+    await screen.findByRole('button', { name: 'Anlegen' });
+    // No username, valid password.
+    await user.type(screen.getByLabelText('Passwort'), 'longenough');
+    await user.click(screen.getByRole('button', { name: 'Anlegen' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Bitte einen Benutzernamen angeben.',
+    );
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('flags a too-short password before calling the API', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'listUsers').mockResolvedValue([]);
+    const create = vi.spyOn(api, 'createUser');
+    render(Users);
+    await screen.findByRole('button', { name: 'Anlegen' });
+    await user.type(screen.getByLabelText('Benutzername'), 'kid');
+    await user.type(screen.getByLabelText('Passwort'), 'short');
+    await user.click(screen.getByRole('button', { name: 'Anlegen' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Das Passwort muss mindestens 8 Zeichen lang sein.',
+    );
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('maps a server validation error (400) to a guiding message', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'listUsers').mockResolvedValue([]);
+    vi.spyOn(api, 'createUser').mockRejectedValue(new ApiError(400, 'invalid user payload'));
+    render(Users);
+    await screen.findByRole('button', { name: 'Anlegen' });
+    await user.type(screen.getByLabelText('Benutzername'), 'kid');
+    await user.type(screen.getByLabelText('Passwort'), 'longenough');
+    await user.click(screen.getByRole('button', { name: 'Anlegen' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Bitte Benutzername und ein Passwort mit mindestens 8 Zeichen angeben.',
+    );
+  });
+
+  it('shows a generic message for an unexpected failure', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'listUsers').mockResolvedValue([]);
+    vi.spyOn(api, 'createUser').mockRejectedValue(new ApiError(500, 'boom'));
+    render(Users);
+    await screen.findByRole('button', { name: 'Anlegen' });
+    await user.type(screen.getByLabelText('Benutzername'), 'kid');
+    await user.type(screen.getByLabelText('Passwort'), 'longenough');
+    await user.click(screen.getByRole('button', { name: 'Anlegen' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Anlegen fehlgeschlagen.');
+  });
+
   it('deactivates an active user', async () => {
     const user = userEvent.setup();
     vi.spyOn(api, 'listUsers').mockResolvedValue([userItem('u1', 'dad', false)]);

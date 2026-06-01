@@ -259,12 +259,17 @@ Decisions captured with the user 2026-06-01 (recorded inline per item). All TDD,
   and a hypothesis-driven workflow. Kept generic at the user's request; adapted from
   the Optrix `debug-optrix` skill (Optrix-specific debug endpoints/topology dropped).
 
-- [ ] **Improve user-create error message (UX polish, low priority — ok to leave as is for now).**
-  The "Nutzer" form shows a generic *"Anlegen fehlgeschlagen."* on any failure.
-  Make it distinguish the real cause — e.g. "Passwort muss mindestens 8 Zeichen
-  lang sein." (password `min(8)`, `packages/shared/src/api.ts`) vs.
-  "Benutzername bereits vergeben." (409 conflict). TDD; German strings, inline.
-  Not part of the cutover — treat as a separate post-cutover polish task.
+- [X] **Improve user-create error message — DONE (Phase 6 #11, 2026-06-01).** The
+  „Nutzer" form (`admin/Users.svelte`) now names the real cause instead of one
+  catch-all: client-side pre-checks catch the two common mistakes before any round
+  trip — empty username → „Bitte einen Benutzernamen angeben.", password < 8 →
+  „Das Passwort muss mindestens 8 Zeichen lang sein." (mirrors `password.min(8)` in
+  `packages/shared/src/api.ts`); on the API call, 409 → „Benutzername bereits
+  vergeben.", 400 → „Bitte Benutzername und ein Passwort mit mindestens 8 Zeichen
+  angeben." (server-validation fallback), anything else → „Anlegen fehlgeschlagen."
+  Mapping extracted into `createErrorMessage`. TDD: `Users.test.ts` (empty username /
+  short password / 400 / 500 / existing 409). German strings inline. This was the
+  LAST task in the round-3 batch — all 11 done.
 
 - [X] **Cover the SPA back-button in the unsaved-changes guard — WON'T DO.** The v0.5.0
       guard (`lib/navGuard.ts`) protects in-app nav + full reload/close (`beforeunload`)

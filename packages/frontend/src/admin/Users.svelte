@@ -24,9 +24,32 @@
     }
   });
 
+  // Mirrors createUserRequestSchema so we can name the exact problem before a
+  // round trip, instead of one catch-all message.
+  const MIN_PASSWORD = 8;
+
+  function createErrorMessage(err: unknown): string {
+    if (err instanceof ApiError) {
+      if (err.status === 409) return 'Benutzername bereits vergeben.';
+      if (err.status === 400) {
+        return 'Bitte Benutzername und ein Passwort mit mindestens 8 Zeichen angeben.';
+      }
+    }
+    return 'Anlegen fehlgeschlagen.';
+  }
+
   async function create(event: Event): Promise<void> {
     event.preventDefault();
     error = '';
+    // Catch the two common input mistakes up front with a precise hint.
+    if (!username.trim()) {
+      error = 'Bitte einen Benutzernamen angeben.';
+      return;
+    }
+    if (password.length < MIN_PASSWORD) {
+      error = 'Das Passwort muss mindestens 8 Zeichen lang sein.';
+      return;
+    }
     try {
       const created = await api.createUser({ username, password, role });
       users = [...users, created].sort((a, b) => a.username.localeCompare(b.username));
@@ -34,10 +57,7 @@
       password = '';
       role = 'editor';
     } catch (err) {
-      error =
-        err instanceof ApiError && err.status === 409
-          ? 'Benutzername bereits vergeben.'
-          : 'Anlegen fehlgeschlagen.';
+      error = createErrorMessage(err);
     }
   }
 
