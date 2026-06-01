@@ -6,7 +6,7 @@
   import { navGuard } from '../lib/navGuard.js';
 
   /** Which admin section is active, so its nav link gets `aria-current="page"`. */
-  type Section = 'beitraege' | 'bilder' | 'nutzer' | 'einstellungen';
+  type Section = 'beitraege' | 'bilder' | 'reisen' | 'nutzer' | 'einstellungen';
 
   let {
     children,
@@ -40,6 +40,9 @@
         </a>
         <a href="#/admin/bilder" onclick={guardNav} aria-current={current === 'bilder' ? 'page' : undefined}>
           Bilder
+        </a>
+        <a href="#/admin/reisen" onclick={guardNav} aria-current={current === 'reisen' ? 'page' : undefined}>
+          Reisen
         </a>
         {#if auth.isAdmin}
           <a href="#/admin/nutzer" onclick={guardNav} aria-current={current === 'nutzer' ? 'page' : undefined}>

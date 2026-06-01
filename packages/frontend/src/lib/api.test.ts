@@ -184,6 +184,14 @@ describe('remaining endpoints', () => {
     const trip = await api.createTrip('Nordsee');
     expect(trip.name).toBe('Nordsee');
 
+    fetchMock.mockResolvedValueOnce(jsonResponse({ trip: { id: 't2', name: 'Nordsee 2027' } }));
+    const renamed = await api.updateTrip('t2', 'Nordsee 2027');
+    expect(renamed.name).toBe('Nordsee 2027');
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/trips/t2',
+      expect.objectContaining({ method: 'PATCH' }),
+    );
+
     fetchMock.mockResolvedValueOnce(noContent());
     await expect(api.deleteTrip('t2')).resolves.toBeUndefined();
   });

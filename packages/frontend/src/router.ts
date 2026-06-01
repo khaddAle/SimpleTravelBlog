@@ -10,6 +10,7 @@ import PostList from './admin/PostList.svelte';
 import PostEditor from './admin/PostEditor.svelte';
 import ImageLibrary from './admin/ImageLibrary.svelte';
 import Users from './admin/Users.svelte';
+import Trips from './admin/Trips.svelte';
 import Settings from './admin/Settings.svelte';
 
 /** Hash routes (svelte-spa-router). German slugs; admin under /admin. */
@@ -25,6 +26,7 @@ export const routes: RouteDefinition = {
   '/admin/neu': PostEditor,
   '/admin/beitrag/:id': PostEditor,
   '/admin/bilder': ImageLibrary,
+  '/admin/reisen': Trips,
   '/admin/nutzer': Users,
   '/admin/einstellungen': Settings,
 

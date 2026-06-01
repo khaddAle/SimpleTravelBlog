@@ -115,6 +115,10 @@ export const createTripRequestSchema = z.object({
 });
 export type CreateTripRequest = z.infer<typeof createTripRequestSchema>;
 
+/** Rename a trip — same payload as create; the shortId stays stable. */
+export const updateTripRequestSchema = createTripRequestSchema;
+export type UpdateTripRequest = z.infer<typeof updateTripRequestSchema>;
+
 export const tripDtoSchema = z.object({
   id: z.string(),
   name: z.string(),

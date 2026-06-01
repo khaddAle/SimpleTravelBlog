@@ -215,6 +215,15 @@ export const api = {
       })
     ).trip;
   },
+  async updateTrip(id: string, name: string): Promise<TripDto> {
+    return (
+      await request<{ trip: TripDto }>(`/api/trips/${id}`, {
+        method: 'PATCH',
+        body: { name },
+        csrf: true,
+      })
+    ).trip;
+  },
   async deleteTrip(id: string): Promise<void> {
     await request<void>(`/api/trips/${id}`, { method: 'DELETE', csrf: true });
   },

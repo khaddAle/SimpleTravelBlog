@@ -191,6 +191,69 @@ describe('posts + trips integration', () => {
     expect(dup.status).toBe(409);
   });
 
+  it('renames a trip, keeping its shortId stable', async () => {
+    const trip = await createTrip('Alpen');
+    const shortId = trip.body.trip.id;
+
+    const renamed = await auth.agent
+      .patch(`/api/trips/${shortId}`)
+      .set('x-csrf-token', auth.csrf)
+      .send({ name: '  Alpen 2027  ' });
+    expect(renamed.status).toBe(200);
+    // Name updated + trimmed, shortId unchanged (search/archive/links key on it).
+    expect(renamed.body.trip).toMatchObject({ id: shortId, name: 'Alpen 2027' });
+
+    const list = await auth.agent.get('/api/trips');
+    expect(list.body.trips.map((t: { name: string }) => t.name)).toContain('Alpen 2027');
+  });
+
+  it('keeps the post count when renaming', async () => {
+    const trip = await createTrip('Alpen');
+    await createPost(postPayload({ tripId: trip.body.trip.id }));
+
+    const renamed = await auth.agent
+      .patch(`/api/trips/${trip.body.trip.id}`)
+      .set('x-csrf-token', auth.csrf)
+      .send({ name: 'Alpen neu' });
+    expect(renamed.body.trip.postCount).toBe(1);
+  });
+
+  it('allows renaming a trip to its own unchanged name (no false 409)', async () => {
+    const trip = await createTrip('Alpen');
+    const same = await auth.agent
+      .patch(`/api/trips/${trip.body.trip.id}`)
+      .set('x-csrf-token', auth.csrf)
+      .send({ name: 'Alpen' });
+    expect(same.status).toBe(200);
+    expect(same.body.trip.name).toBe('Alpen');
+  });
+
+  it('rejects renaming a trip to another trip\'s name with 409', async () => {
+    await createTrip('Alpen');
+    const other = await createTrip('Dolomiten');
+    const clash = await auth.agent
+      .patch(`/api/trips/${other.body.trip.id}`)
+      .set('x-csrf-token', auth.csrf)
+      .send({ name: 'Alpen' });
+    expect(clash.status).toBe(409);
+  });
+
+  it('404s renaming an unknown trip', async () => {
+    const res = await auth.agent
+      .patch('/api/trips/zzzzzz')
+      .set('x-csrf-token', auth.csrf)
+      .send({ name: 'Neu' });
+    expect(res.status).toBe(404);
+  });
+
+  it('requires the CSRF header to rename a trip (403)', async () => {
+    const trip = await createTrip('Alpen');
+    const res = await auth.agent
+      .patch(`/api/trips/${trip.body.trip.id}`)
+      .send({ name: 'Neu' });
+    expect(res.status).toBe(403);
+  });
+
   it('refuses to delete a trip that posts reference (409 + the posts)', async () => {
     const trip = await createTrip('Alpen');
     const post = await createPost(postPayload({ tripId: trip.body.trip.id }));

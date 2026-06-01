@@ -6,6 +6,7 @@ import {
   updatePostRequestSchema,
   postDtoSchema,
   createTripRequestSchema,
+  updateTripRequestSchema,
   searchQuerySchema,
   settingsDtoSchema,
   isoCountrySchema,
@@ -164,6 +165,13 @@ describe('createTripRequestSchema', () => {
       'Alpen 2026',
     );
     expect(() => createTripRequestSchema.parse({ name: '' })).toThrow();
+  });
+});
+
+describe('updateTripRequestSchema', () => {
+  it('requires a non-empty name (same shape as create)', () => {
+    expect(updateTripRequestSchema.parse({ name: 'Alpen 2027' }).name).toBe('Alpen 2027');
+    expect(() => updateTripRequestSchema.parse({ name: '' })).toThrow();
   });
 });
 

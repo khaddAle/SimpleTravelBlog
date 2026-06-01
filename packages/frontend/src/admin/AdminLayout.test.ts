@@ -27,6 +27,12 @@ describe('AdminLayout', () => {
     expect(screen.queryByRole('link', { name: 'Nutzer' })).toBeNull();
   });
 
+  it('shows the Reisen link to every author (not admin-gated)', () => {
+    auth.user = { id: 'u2', username: 'dad', role: 'editor' };
+    render(AdminLayout);
+    expect(screen.getByRole('link', { name: 'Reisen' })).toBeInTheDocument();
+  });
+
   it('logs out and redirects to login', async () => {
     const user = userEvent.setup();
     auth.user = { id: 'u1', username: 'mum', role: 'admin' };

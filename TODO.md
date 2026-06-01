@@ -37,32 +37,21 @@ Decisions captured with the user 2026-06-01 (recorded inline per item). All TDD,
         the user understands more loaded even if it landed higher up; consider a flat
         „Neueste zuerst" toggle as an escape hatch if the scatter feels wrong.
 
-- [ ] **Reisen management — dedicated admin page (create / rename / delete), open to
-      all authors.** Today there is NO UI to create or edit a Reise — only the
-      assign-`<select>` in `MetadataSidebar.svelte` (lines ~142). Backend
-      (`routes/trips.ts`) has list (GET) + create (POST) + delete (DELETE) but **no
-      rename**, and the frontend `api` has `listTrips`/`createTrip`/`deleteTrip` but no
-      `updateTrip`. **DECISIONS:** (a) a **dedicated „Reisen" admin page** in the nav
-      (list + create + rename + delete); the post sidebar stays **assign-only** (no
-      inline create). (b) **Permissions: all logged-in authors** may manage Reisen —
-      matches the current `requireAuth` on the trip routes, no gating change (do NOT
-      mirror the admin-only Nutzer/Einstellungen gating here). (c) **Deletion stays
-      'only when empty'** — keep the backend's existing 409-if-referenced rule; the UI
-      explains why and links the referencing posts so the author can reassign first
-      (the DELETE route already returns the referencing posts). NEW WORK: add a
-      **rename** endpoint (`PATCH/PUT /api/trips/:shortId`, name unique 1–120,
-      `requireAuth`+`requireCsrf`, 409 on duplicate name) + `api.updateTrip` +
-      the page component. TDD backend + frontend.
-      - ⚠ **Risk (MED — impl):** the Trip `name` has a UNIQUE index, so a rename that
-        collides will throw a Mongo `E11000` duplicate-key error and surface as a 500,
-        not the intended 409. **Address:** pre-check `Trip.findOne({ name })` (excluding
-        the same shortId) and/or catch `E11000` and map it to `httpErrors.conflict`;
-        cover the duplicate-rename case in the test. Also normalize/trim the name the
-        same way create does so " Foo" vs "Foo" don't both slip in.
-      - ⚠ **Risk (MED — correctness):** rename must keep `shortId` STABLE — search
-        filters (`?tripId=`), archive grouping, and any shared links key on the
-        shortId, not the name. **Address:** update only `name`; never regenerate
-        `shortId` on rename (a test asserting the shortId is unchanged is cheap).
+- [X] **Reisen management — dedicated admin page (create / rename / delete) — DONE
+      (Phase 4 #7, 2026-06-01).** New `admin/Trips.svelte` page (route `/admin/reisen`,
+      nav link „Reisen" in `AdminLayout` — UNCONDITIONAL, all authors, NOT admin-gated):
+      lists trips with their post count, create form, inline rename (Umbenennen →
+      Speichern/Abbrechen), and delete-with-confirm. On a blocked delete (409
+      `trip_in_use`) it names + links the referencing posts (`#/admin/beitrag/:id`) so
+      the author can reassign first. Sidebar stays assign-only. NEW rename endpoint
+      `PATCH /api/trips/:shortId` (`requireAuth`+`requireCsrf`, `updateTripRequestSchema`
+      = same shape as create): trims, rejects a clash with a DIFFERENT trip → 409
+      (renaming to its own name is a no-op), updates ONLY `name` (shortId stays stable),
+      catches Mongo `E11000` from a concurrent rename → 409, returns the live
+      `postCount`. Frontend `api.updateTrip`. TDD: shared `api.test.ts`, backend
+      `posts.int.test.ts` (rename/stable-shortId/own-name/clash-409/404/CSRF), frontend
+      `Trips.test.ts` + `AdminLayout.test.ts` (Reisen link for editors) + `api.test.ts`.
+      MED risks (E11000→409, stable shortId) both handled + tested.
 
 - [X] **Suche — switch to live substring filtering — DONE (Phase 1 #2, 2026-06-01).**
       Implemented: new pure `posts/fold.ts` (`foldSearch` = lowercase + ä→ae/ö→oe/ü→ue/
