@@ -210,6 +210,21 @@ describe('public reader API integration', () => {
     expect(res.body.trips).toEqual([{ id: tripId, name: 'Alpen', postCount: 1 }]);
   });
 
+  it('exposes search facets (countries and months) over published posts only', async () => {
+    // The Suche page seeds its Land/Monat dropdowns from these facets. Computing
+    // them server-side (instead of paging through every post) avoids the old
+    // 100-post cap that silently dropped countries/months past the first page.
+    await createPublished({ country: 'DE', postDate: '2026-05-01T00:00:00.000Z' });
+    await createPublished({ country: 'IT', postDate: '2026-03-15T00:00:00.000Z' });
+    await createPublished({ country: 'DE', postDate: '2026-05-20T00:00:00.000Z' }); // dup
+    await createDraft({ country: 'FR', postDate: '2026-01-01T00:00:00.000Z' }); // excluded
+
+    const res = await request(app.server).get('/api/public/facets');
+    expect(res.status).toBe(200);
+    expect(res.body.countries).toEqual(['DE', 'IT']);
+    expect(res.body.months).toEqual([202603, 202605]);
+  });
+
   it('returns default branding when no settings exist', async () => {
     const res = await request(app.server).get('/api/public/settings');
     expect(res.body.settings.siteTitle).toBeTruthy();

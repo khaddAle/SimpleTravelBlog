@@ -7,6 +7,7 @@
   import { reverseGeocode } from '../../lib/nominatim.js';
   import { fillMissingPlace } from '../../lib/metadata.js';
   import MapPicker from './MapPicker.svelte';
+  import MapPickerDialog from './MapPickerDialog.svelte';
 
   interface PickOpts {
     orphansOnly?: boolean;
@@ -23,9 +24,19 @@
   let { metadata, trips, onChange, pickImage }: Props = $props();
 
   let value = $state<PostMetadata>(untrack(() => ({ ...metadata })));
+  let mapDialogOpen = $state(false);
+  // Bumped after a big-map pick so the inline picker remounts onto the new point
+  // (it seeds its marker once and otherwise wouldn't reflect an external change).
+  let mapPickerSeed = $state(0);
 
   function emit(): void {
     onChange({ ...value });
+  }
+
+  function applyMapDialog(lat: number, lng: number): void {
+    mapDialogOpen = false;
+    void handleMapChange(lat, lng);
+    mapPickerSeed += 1;
   }
 
   function setTrip(id: string): void {
@@ -166,13 +177,27 @@
 
   <div class="fld map-field">
     <span class="fld-label">Ort auf der Karte</span>
-    <MapPicker
-      lat={value.lat}
-      lng={value.lng}
-      onChange={(lat, lng) => void handleMapChange(lat, lng)}
-    />
+    {#key mapPickerSeed}
+      <MapPicker
+        lat={value.lat}
+        lng={value.lng}
+        onChange={(lat, lng) => void handleMapChange(lat, lng)}
+      />
+    {/key}
+    <button type="button" class="tb-btn map-big" onclick={() => (mapDialogOpen = true)}>
+      Auf großer Karte wählen
+    </button>
   </div>
 </div>
+
+{#if mapDialogOpen}
+  <MapPickerDialog
+    lat={value.lat}
+    lng={value.lng}
+    onConfirm={applyMapDialog}
+    onCancel={() => (mapDialogOpen = false)}
+  />
+{/if}
 
 <style>
   .panel {
@@ -254,5 +279,9 @@
   .cover-actions {
     display: flex;
     gap: 8px;
+  }
+  .map-big {
+    margin-top: 8px;
+    align-self: flex-start;
   }
 </style>

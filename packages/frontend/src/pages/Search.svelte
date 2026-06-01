@@ -9,10 +9,6 @@
 
   const MONTHS = ['Jan.', 'Feb.', 'März', 'Apr.', 'Mai', 'Juni', 'Juli', 'Aug.', 'Sep.', 'Okt.', 'Nov.', 'Dez.'];
   const fmtYm = (v: number): string => `${MONTHS[(v % 100) - 1]} ${Math.floor(v / 100)}`;
-  const ymOf = (iso: string): number => {
-    const d = new Date(iso);
-    return d.getUTCFullYear() * 100 + (d.getUTCMonth() + 1);
-  };
 
   let q = $state('');
   let country = $state('');
@@ -29,13 +25,14 @@
   let searched = $state(false);
 
   onMount(async () => {
-    const [page, loadedTrips] = await Promise.all([api.publicPosts(1, 100), api.publicTrips()]);
+    // Filter options come from a dedicated facets endpoint, not a page of posts,
+    // so Land/Monat stay complete no matter how many posts exist.
+    const [facets, loadedTrips] = await Promise.all([api.publicFacets(), api.publicTrips()]);
     trips = loadedTrips;
-    const posts = page.items;
-    countries = [...new Set(posts.map((p) => p.country))].sort((a, b) =>
+    countries = [...facets.countries].sort((a, b) =>
       countryName(a).localeCompare(countryName(b), 'de'),
     );
-    months = [...new Set(posts.map((p) => ymOf(p.postDate)))].sort((a, b) => a - b);
+    months = [...facets.months].sort((a, b) => a - b);
     von = months[0];
     bis = months.at(-1);
     ready = true;

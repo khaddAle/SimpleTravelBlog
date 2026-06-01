@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import type { PostDto, TripDto } from '@stb/shared';
   import { api } from '../lib/api.js';
   import { groupPosts, type CountryGroup } from '../lib/archive.js';
@@ -11,12 +11,23 @@
   import SiteFooter from '../components/SiteFooter.svelte';
   import Photo from '../components/Photo.svelte';
 
-  let groups = $state<CountryGroup[]>([]);
-  let loading = $state(true);
+  // One page is small enough that the country/trip grouping stays readable; the
+  // reader pulls more with the "Mehr laden" button rather than numbered pages.
+  const PAGE_SIZE = 20;
 
-  const total = $derived(groups.reduce((sum, g) => sum + g.trips.reduce((n, t) => n + t.posts.length, 0), 0));
+  let posts = $state<PostDto[]>([]);
+  let trips = $state<TripDto[]>([]);
+  let serverTotal = $state(0);
+  let page = $state(0);
+  let loading = $state(true);
+  let loadingMore = $state(false);
+  let moreButton = $state<HTMLButtonElement>();
+
+  const groups = $derived(groupPosts(posts, trips));
+  const loadedCount = $derived(posts.length);
+  const hasMore = $derived(loadedCount < serverTotal);
   const summary = $derived(
-    `${total} ${total === 1 ? 'Beitrag' : 'Beiträge'} aus ` +
+    `${loadedCount} ${loadedCount === 1 ? 'Beitrag' : 'Beiträge'} aus ` +
       `${groups.length} ${groups.length === 1 ? 'Land' : 'Ländern'}, gegliedert nach Reisen.`,
   );
 
@@ -31,12 +42,39 @@
 
   onMount(async () => {
     try {
-      const [page, trips] = await Promise.all([api.publicPosts(1, 100), api.publicTrips()]);
-      groups = groupPosts(page.items as PostDto[], trips as TripDto[]);
+      const [first, loadedTrips] = await Promise.all([
+        api.publicPosts(1, PAGE_SIZE),
+        api.publicTrips(),
+      ]);
+      posts = first.items;
+      trips = loadedTrips;
+      serverTotal = first.total;
+      page = 1;
     } finally {
       loading = false;
     }
   });
+
+  async function loadMore(): Promise<void> {
+    if (loadingMore || !hasMore) return;
+    // Appending into the grouped layout scatters new rows into existing country
+    // sections above the button; pin the button to its viewport spot so the page
+    // doesn't jump under the reader's cursor.
+    const before = moreButton?.getBoundingClientRect().top ?? 0;
+    loadingMore = true;
+    try {
+      const next = await api.publicPosts(page + 1, PAGE_SIZE);
+      posts = [...posts, ...next.items];
+      serverTotal = next.total;
+      page += 1;
+    } finally {
+      loadingMore = false;
+    }
+    await tick();
+    const after = moreButton?.getBoundingClientRect().top ?? before;
+    const delta = after - before;
+    if (delta !== 0) window.scrollBy(0, delta);
+  }
 </script>
 
 <SiteHeader current="archiv" />
@@ -45,7 +83,7 @@
   <div class="arch-intro">
     <p class="eyebrow">Archiv</p>
     <h1 class="h-page">Nach Ländern &amp; Reisen</h1>
-    {#if !loading && total > 0}
+    {#if !loading && loadedCount > 0}
       <p class="lede stack-16">{summary}</p>
     {/if}
   </div>
@@ -80,6 +118,21 @@
         {/each}
       </section>
     {/each}
+
+    {#if hasMore}
+      <div class="more">
+        <button
+          class="more-btn"
+          type="button"
+          bind:this={moreButton}
+          onclick={loadMore}
+          disabled={loadingMore}
+        >
+          {loadingMore ? 'Lädt…' : 'Mehr laden'}
+        </button>
+        <p class="more-count">{loadedCount} von {serverTotal} Beiträgen</p>
+      </div>
+    {/if}
   {/if}
 </main>
 
@@ -180,6 +233,41 @@
   .arch-row:hover .go {
     color: var(--accent);
     transform: translateX(3px);
+  }
+  .more {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 48px 0 64px;
+  }
+  .more-btn {
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-frame-sm);
+    padding: 12px 28px;
+    cursor: pointer;
+    transition:
+      border-color 0.15s,
+      color 0.15s;
+  }
+  .more-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .more-btn:disabled {
+    cursor: default;
+    color: var(--faint);
+  }
+  .more-count {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--faint);
+    margin: 0;
   }
   @media (max-width: 600px) {
     .arch-country {

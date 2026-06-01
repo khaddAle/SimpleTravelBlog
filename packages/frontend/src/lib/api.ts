@@ -79,6 +79,14 @@ export interface PostRef {
   title: string;
 }
 
+/** Seed data for the Suche page filters (computed server-side, page-independent). */
+export interface PublicFacets {
+  /** Distinct published country codes, ascending by code. */
+  countries: string[];
+  /** Distinct published year-months as YYYYMM, ascending. */
+  months: number[];
+}
+
 type QueryValue = string | number | boolean | undefined;
 
 function toQueryString(query: Record<string, QueryValue>): string {
@@ -330,6 +338,9 @@ export const api = {
   },
   async publicTrips(): Promise<TripDto[]> {
     return (await request<{ trips: TripDto[] }>('/api/public/trips')).trips;
+  },
+  async publicFacets(): Promise<PublicFacets> {
+    return await request<PublicFacets>('/api/public/facets');
   },
   async publicMap(): Promise<MapData> {
     return await request<MapData>('/api/public/map');

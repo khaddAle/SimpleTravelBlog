@@ -4,9 +4,14 @@ import userEvent from '@testing-library/user-event';
 import type { PostMetadata } from '../../lib/types.js';
 import MetadataSidebar from './MetadataSidebar.svelte';
 
-// MapPicker mounts Leaflet; stub it out for these form-focused tests.
+// MapPicker (and the big-map dialog) mount Leaflet; stub it for these tests.
 vi.mock('leaflet', () => {
-  const map = { setView: vi.fn().mockReturnThis(), on: vi.fn().mockReturnThis(), remove: vi.fn() };
+  const map = {
+    setView: vi.fn().mockReturnThis(),
+    on: vi.fn().mockReturnThis(),
+    invalidateSize: vi.fn().mockReturnThis(),
+    remove: vi.fn(),
+  };
   return {
     default: {
       map: vi.fn(() => map),
@@ -71,6 +76,32 @@ describe('MetadataSidebar', () => {
     render(MetadataSidebar, { metadata: base, trips, onChange });
     // The map picker shows the seeded coordinates.
     expect(screen.getByText('Gewählt: 47.42000, 10.98000')).toBeInTheDocument();
+  });
+
+  it('opens the big-map dialog and cancels without changing the post', async () => {
+    const user = userEvent.setup();
+    render(MetadataSidebar, { metadata: base, trips, onChange });
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Auf großer Karte wählen' }));
+    const dialog = screen.getByRole('dialog', { name: 'Ort auf großer Karte wählen' });
+    expect(dialog).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Abbrechen' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('applies the big-map selection to the post on confirm and closes', async () => {
+    const user = userEvent.setup();
+    render(MetadataSidebar, { metadata: base, trips, onChange });
+    await user.click(screen.getByRole('button', { name: 'Auf großer Karte wählen' }));
+    // Seeded from the post's coordinates, so confirm is immediately available.
+    await user.click(screen.getByRole('button', { name: 'Standort übernehmen' }));
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ lat: 47.42, lng: 10.98 }),
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('sets and clears the subtitle', async () => {

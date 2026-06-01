@@ -1,32 +1,45 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { render, screen, waitFor, fireEvent } from '@testing-library/svelte';
 import L from 'leaflet';
 import { api } from '../lib/api.js';
 import MapPage from './MapPage.svelte';
 
+// Tests can swap in a tighter viewport by reassigning `viewport.contains`.
+const viewport = vi.hoisted(() => ({ contains: (_latlng: [number, number]): boolean => true }));
+
 vi.mock('leaflet', () => {
+  const bounds = { pad: vi.fn().mockReturnThis(), contains: (ll: [number, number]) => viewport.contains(ll) };
   const map = {
     setView: vi.fn().mockReturnThis(),
     fitBounds: vi.fn().mockReturnThis(),
+    on: vi.fn().mockReturnThis(),
+    getBounds: vi.fn(() => bounds),
     remove: vi.fn(),
   };
-  const marker = {
-    addTo: vi.fn().mockReturnThis(),
-    bindPopup: vi.fn().mockReturnThis(),
+  const makeMarker = () => {
+    const el = document.createElement('div');
+    return {
+      addTo: vi.fn().mockReturnThis(),
+      bindPopup: vi.fn().mockReturnThis(),
+      on: vi.fn().mockReturnThis(),
+      getElement: vi.fn(() => el),
+    };
   };
-  const bounds = { pad: vi.fn().mockReturnThis() };
   return {
     default: {
       map: vi.fn(() => map),
       tileLayer: vi.fn(() => ({ addTo: vi.fn().mockReturnThis() })),
       divIcon: vi.fn(() => ({})),
-      marker: vi.fn(() => marker),
+      marker: vi.fn(() => makeMarker()),
       featureGroup: vi.fn(() => ({ getBounds: vi.fn(() => bounds) })),
     },
   };
 });
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  viewport.contains = () => true;
+});
 afterEach(() => vi.restoreAllMocks());
 
 const points = [
@@ -59,7 +72,7 @@ describe('MapPage', () => {
     expect(row).toHaveTextContent('1');
     expect(row).toHaveTextContent('Zugspitze, Österreich');
     expect(screen.getByRole('heading', { level: 4, name: 'Berge' })).toBeInTheDocument();
-    expect(screen.getByText('Alle Orte')).toBeInTheDocument();
+    expect(screen.getByText('Im Kartenausschnitt')).toBeInTheDocument();
   });
 
   it('builds the Leaflet map, drops a marker per point and fits the view to them', async () => {
@@ -92,8 +105,52 @@ describe('MapPage', () => {
   it('omits the unlocated note when every post has a location', async () => {
     vi.spyOn(api, 'publicMap').mockResolvedValue(mapData());
     render(MapPage);
-    await screen.findByText('Alle Orte');
+    await screen.findByText('Im Kartenausschnitt');
     expect(screen.queryByText(/ohne Ort/)).not.toBeInTheDocument();
+  });
+
+  it('lists only the points inside the current viewport and counts the rest', async () => {
+    // Only the first point (lat 47) sits inside this fake viewport.
+    viewport.contains = ([lat]) => lat === 47;
+    vi.spyOn(api, 'publicMap').mockResolvedValue(mapData());
+    render(MapPage);
+
+    expect(await screen.findByRole('heading', { level: 4, name: 'Berge' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 4, name: 'Meer' })).toBeNull();
+    // The one off-screen post is surfaced as a hint, not dropped.
+    expect(screen.getByText(/1 weitere/)).toBeInTheDocument();
+  });
+
+  it('omits the viewport hint when every point is on screen', async () => {
+    vi.spyOn(api, 'publicMap').mockResolvedValue(mapData());
+    render(MapPage);
+    await screen.findByRole('heading', { level: 4, name: 'Berge' });
+    expect(screen.queryByText(/weitere/)).toBeNull();
+  });
+
+  it('highlights the matching marker when a list row is hovered', async () => {
+    vi.spyOn(api, 'publicMap').mockResolvedValue(mapData());
+    render(MapPage);
+    const row = await screen.findByRole('link', { name: /Berge/ });
+    // Markers are created in list order, so the first marker is Berge's.
+    const markerResults = (L.marker as unknown as { mock: { results: { value: { getElement: () => HTMLElement } }[] } }).mock.results;
+    const bergeEl = markerResults[0]!.value.getElement();
+
+    await fireEvent.mouseEnter(row);
+    await waitFor(() => expect(bergeEl.classList.contains('map-pin--active')).toBe(true));
+
+    await fireEvent.mouseLeave(row);
+    await waitFor(() => expect(bergeEl.classList.contains('map-pin--active')).toBe(false));
+  });
+
+  it('wires marker hover back to the list (bidirectional highlight)', async () => {
+    vi.spyOn(api, 'publicMap').mockResolvedValue(mapData());
+    render(MapPage);
+    await waitFor(() => expect(L.marker).toHaveBeenCalledTimes(2));
+    const markerResults = (L.marker as unknown as { mock: { results: { value: { on: ReturnType<typeof vi.fn> } }[] } }).mock.results;
+    const events = markerResults[0]!.value.on.mock.calls.map((c) => c[0]);
+    expect(events).toContain('mouseover');
+    expect(events).toContain('mouseout');
   });
 
   it('falls back to a default view when there are no points', async () => {

@@ -244,6 +244,14 @@ describe('remaining endpoints', () => {
     expect(await api.publicTrips()).toHaveLength(1);
 
     fetchMock.mockResolvedValueOnce(
+      jsonResponse({ countries: ['DE', 'IT'], months: [202603, 202605] }),
+    );
+    const facets = await api.publicFacets();
+    expect(facets.countries).toEqual(['DE', 'IT']);
+    expect(facets.months).toEqual([202603, 202605]);
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/public/facets', expect.anything());
+
+    fetchMock.mockResolvedValueOnce(
       jsonResponse({ points: [{ id: 'p1', title: 'T' }], unlocatedCount: 2 }),
     );
     const map = await api.publicMap();

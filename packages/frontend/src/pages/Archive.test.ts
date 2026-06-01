@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
 import type { PostDto } from '@stb/shared';
 import { api } from '../lib/api.js';
 import Archive from './Archive.svelte';
@@ -117,5 +118,43 @@ describe('Archive', () => {
     vi.spyOn(api, 'publicTrips').mockResolvedValue([]);
     render(Archive);
     expect(await screen.findByText('Noch keine Beiträge.')).toBeInTheDocument();
+  });
+
+  it('shows "Mehr laden" with a progress counter and appends the next page', async () => {
+    const user = userEvent.setup();
+    const pp = vi
+      .spyOn(api, 'publicPosts')
+      .mockResolvedValueOnce({ items: [post('a', 'DE')], page: 1, pageSize: 20, total: 2 })
+      .mockResolvedValueOnce({ items: [post('b', 'FR')], page: 2, pageSize: 20, total: 2 });
+    vi.spyOn(api, 'publicTrips').mockResolvedValue([]);
+    render(Archive);
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Deutschland' }),
+    ).toBeInTheDocument();
+    expect(pp).toHaveBeenLastCalledWith(1, 20);
+    expect(screen.getByText('1 von 2 Beiträgen')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Mehr laden' }));
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Frankreich' }),
+    ).toBeInTheDocument();
+    expect(pp).toHaveBeenLastCalledWith(2, 20);
+    // Everything is loaded now → the button disappears.
+    expect(screen.queryByRole('button', { name: 'Mehr laden' })).toBeNull();
+  });
+
+  it('hides "Mehr laden" when the first page already holds everything', async () => {
+    vi.spyOn(api, 'publicPosts').mockResolvedValue({
+      items: [post('a', 'DE')],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+    });
+    vi.spyOn(api, 'publicTrips').mockResolvedValue([]);
+    render(Archive);
+    await screen.findByRole('heading', { level: 2, name: 'Deutschland' });
+    expect(screen.queryByRole('button', { name: 'Mehr laden' })).toBeNull();
   });
 });

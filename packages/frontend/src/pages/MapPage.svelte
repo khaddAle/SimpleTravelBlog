@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { SvelteMap } from 'svelte/reactivity';
   import L from 'leaflet';
   import { api, type MapPoint } from '../lib/api.js';
   import { countryName } from '../lib/countries.js';
+  import { visiblePoints, spreadOverlaps } from '../lib/mapViewport.js';
   import SiteHeader from '../components/SiteHeader.svelte';
   import SiteFooter from '../components/SiteFooter.svelte';
 
@@ -12,6 +14,19 @@
   // never as fake markers at Null Island.
   let unlocatedCount = $state(0);
   let loading = $state(true);
+
+  // Ids currently inside the map viewport; the side list mirrors the map view.
+  let visibleIds = $state<Set<string>>(new Set());
+  // The post highlighted by a hover, on either the list or the map.
+  let highlightId = $state<string | null>(null);
+
+  // Markers are built once and kept by id; pan/zoom only recomputes the visible
+  // set and toggles a highlight class — markers are never rebuilt.
+  const markerById = new SvelteMap<string, L.Marker>();
+  let mapRef: L.Map | undefined;
+
+  const visibleList = $derived(points.filter((p) => visibleIds.has(p.id)));
+  const offscreenCount = $derived(points.length - visibleList.length);
 
   onMount(async () => {
     try {
@@ -23,10 +38,17 @@
     }
   });
 
+  function recomputeVisible(): void {
+    if (!mapRef) return;
+    const inView = visiblePoints(points, mapRef.getBounds());
+    visibleIds = new Set(inView.map((p) => p.id));
+  }
+
   // Build the map once the points have loaded and the container is mounted.
   $effect(() => {
     if (loading) return;
     const map = L.map(mapEl);
+    mapRef = map;
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap-Mitwirkende',
     }).addTo(map);
@@ -37,21 +59,41 @@
       iconSize: [15, 15],
       iconAnchor: [8, 8],
     });
-    const markers = points.map((point) =>
-      L.marker([point.lat, point.lng], { icon: dotIcon })
+    const markers = spreadOverlaps(points).map((point) => {
+      const marker = L.marker([point.lat, point.lng], { icon: dotIcon })
         .addTo(map)
         .bindPopup(
           `<a class="map-pop" href="#/beitrag/${point.id}">${point.title}</a>` +
             `<span class="map-pop-where">${point.placeName}, ${countryName(point.country)}</span>`,
-        ),
-    );
+        );
+      // Hovering a pin highlights its list row, and vice versa.
+      marker.on('mouseover', () => (highlightId = point.id));
+      marker.on('mouseout', () => (highlightId = null));
+      markerById.set(point.id, marker);
+      return marker;
+    });
     if (markers.length > 0) {
       // Frame the view around everything we've been, with a little breathing room.
       map.fitBounds(L.featureGroup(markers).getBounds().pad(0.2));
     } else {
       map.setView([51.1657, 10.4515], 4);
     }
-    return () => map.remove();
+    // Keep the list in sync with whatever the map is showing.
+    map.on('moveend', recomputeVisible);
+    recomputeVisible();
+    return () => {
+      map.remove();
+      markerById.clear();
+      mapRef = undefined;
+    };
+  });
+
+  // Mirror the hovered post onto its marker without touching the others.
+  $effect(() => {
+    const active = highlightId;
+    for (const [id, marker] of markerById) {
+      marker.getElement()?.classList.toggle('map-pin--active', id === active);
+    }
   });
 </script>
 
@@ -74,14 +116,20 @@
     </div>
 
     <div class="map-list">
-      <div class="head">Alle Orte</div>
+      <div class="head">Im Kartenausschnitt</div>
       {#if loading}
         <p class="status">Lädt…</p>
       {:else if points.length === 0}
         <p class="status">Noch keine verorteten Beiträge.</p>
       {:else}
-        {#each points as point, i (point.id)}
-          <a class="mrow" href={`#/beitrag/${point.id}`}>
+        {#each visibleList as point, i (point.id)}
+          <a
+            class="mrow"
+            class:active={highlightId === point.id}
+            href={`#/beitrag/${point.id}`}
+            onmouseenter={() => (highlightId = point.id)}
+            onmouseleave={() => (highlightId = null)}
+          >
             <span class="ord">{i + 1}</span>
             <span class="t">
               <h4>{point.title}</h4>
@@ -89,6 +137,12 @@
             </span>
           </a>
         {/each}
+        {#if offscreenCount > 0}
+          <p class="offscreen">
+            {offscreenCount === 1 ? '1 weiterer Ort' : `${offscreenCount} weitere Orte`}
+            außerhalb des Ausschnitts – herauszoomen, um alle zu sehen.
+          </p>
+        {/if}
       {/if}
       {#if !loading && unlocatedCount > 0}
         <p class="unlocated">
@@ -135,6 +189,16 @@
     background: var(--accent);
     border: 2.5px solid #fff;
     box-shadow: 0 2px 6px rgba(18, 28, 46, 0.4);
+    transition:
+      transform 0.12s,
+      box-shadow 0.12s;
+  }
+  /* The pin whose list row (or itself) is hovered grows and rings up. */
+  :global(.map-pin--active .map-dot) {
+    transform: scale(1.5);
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent),
+      0 3px 8px rgba(18, 28, 46, 0.5);
   }
   /* Inner keyline of the framed print, drawn over the map without blocking it. */
   .map-mat {
@@ -195,8 +259,16 @@
     color: inherit;
     transition: background 0.12s;
   }
-  .mrow:hover {
+  .mrow:hover,
+  .mrow.active {
     background: var(--surface);
+  }
+  .offscreen {
+    margin: 10px 8px 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--faint);
   }
   .mrow .ord {
     width: 22px;

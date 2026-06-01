@@ -130,6 +130,21 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: RouteContext): v
     };
   });
 
+  // Seed data for the Suche page's Land/Monat dropdowns. Computed server-side so
+  // the facets stay complete past the first page of posts (the reader's filter
+  // options must not depend on pagination).
+  app.get('/api/public/facets', async () => {
+    const [countries, monthRows] = await Promise.all([
+      Post.distinct('country', PUBLISHED),
+      Post.aggregate<{ _id: { y: number; m: number } }>([
+        { $match: PUBLISHED },
+        { $group: { _id: { y: { $year: '$postDate' }, m: { $month: '$postDate' } } } },
+      ]),
+    ]);
+    const months = monthRows.map((r) => r._id.y * 100 + r._id.m).sort((a, b) => a - b);
+    return { countries: [...countries].sort(), months };
+  });
+
   app.get('/api/public/settings', async () => {
     const settings = await Settings.findById(SETTINGS_ID).lean();
     return { settings: settings ? toSettingsDto(settings) : DEFAULT_SETTINGS };

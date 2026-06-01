@@ -28,7 +28,12 @@ const all = [
 ];
 
 beforeEach(() => {
-  vi.spyOn(api, 'publicPosts').mockResolvedValue({ items: all, page: 1, pageSize: 100, total: 2 });
+  // Facets are seeded server-side now (not by paging through posts), so the
+  // Land/Monat dropdowns no longer miss countries past the first 100 posts.
+  vi.spyOn(api, 'publicFacets').mockResolvedValue({
+    countries: ['AT', 'DE'],
+    months: [202603, 202605],
+  });
   vi.spyOn(api, 'publicTrips').mockResolvedValue([{ id: 't1', name: 'Alpen' }]);
 });
 afterEach(() => vi.restoreAllMocks());

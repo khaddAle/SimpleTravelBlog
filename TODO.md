@@ -11,8 +11,23 @@ the plan and the per-phase memory note.
 Decisions captured with the user 2026-06-01 (recorded inline per item). All TDD,
 80% gate, German UI strings inline.
 
-- [ ] **"Alle Beiträge" (Archive) — page beyond the first 100 via a „Mehr laden"
-      button.** Bug: `Archive.svelte` calls `api.publicPosts(1, 100)` (100 = the
+- [X] **"Alle Beiträge" (Archive) — „Mehr laden" paging + Search facet-seed cap —
+      DONE (Phase 5 #8, 2026-06-01).** `Archive.svelte` now pages with `PAGE_SIZE=20`:
+      loads page 1, appends on „Mehr laden", derives the Land→Reise→Beitrag grouping
+      from the accumulated `posts` (`groupPosts`), shows the button + a „N von TOTAL
+      Beiträgen" counter while `loaded < serverTotal`, and pins the button to its
+      viewport spot after append (`getBoundingClientRect` + `window.scrollBy`) so the
+      page doesn't jump (MED-UX scatter risk handled). The Search facet cap is fixed
+      with a dedicated lightweight `GET /api/public/facets` → `{ countries, months }`
+      (server-computed via `Post.distinct` + a `$year`/`$month` aggregation over the
+      PUBLISHED set), so the Land/Monat dropdowns no longer miss anything past the
+      first 100 posts; `Search.svelte` onMount seeds from `api.publicFacets()` (the old
+      `publicPosts(1,100)` + `ymOf` derivation removed). TDD: backend `public.int.test.ts`
+      (facets), frontend `api.test.ts` (publicFacets), `Archive.test.ts` (Mehr-laden +
+      counter), `Search.test.ts` (facet seeding). Original analysis kept below.
+
+- [ ] _(superseded by the DONE entry above)_ **page beyond the first 100 via a „Mehr
+      laden" button.** Bug: `Archive.svelte` calls `api.publicPosts(1, 100)` (100 = the
       backend max `pageSize`, `paginationQuerySchema` in `packages/shared/src/api.ts`),
       so with >100 posts the rest are silently dropped. **DECISION: „Mehr laden"
       button** (not numbered pages — keeps the Land→Reise→Beitrag grouping in
@@ -106,8 +121,23 @@ Decisions captured with the user 2026-06-01 (recorded inline per item). All TDD,
         posts; leave a comment to revisit (e.g. restore `$text` as a whole-word fast
         path, or a dedicated search index) only if the corpus grows into the thousands.
 
-- [ ] **Karte — viewport-filtered list, „X weitere…" hint, and bidirectional
-      hover-highlight.** Today `MapPage.svelte` loads ALL points (`api.publicMap()`),
+- [X] **Karte — viewport-filtered list, „X weitere…" hint, bidirectional hover —
+      DONE (Phase 5 #9, 2026-06-01).** New pure helper `lib/mapViewport.ts`:
+      `visiblePoints(points, bounds)` (bounds = anything with `contains([lat,lng])`,
+      so Leaflet-free + unit-tested) and `spreadOverlaps(points)` (deterministic ring
+      fan-out for posts at identical coords — the „nudge overlapping pins" item).
+      `MapPage.svelte` now builds markers ONCE into a `SvelteMap<id, marker>`, listens
+      on `moveend`, and recomputes a `visibleIds` set (never rebuilds markers — MED-perf
+      risk handled); the side list („Im Kartenausschnitt") shows only in-view posts and,
+      when some are off-screen, a „N weitere Orte außerhalb des Ausschnitts —
+      herauszoomen…" hint. Bidirectional hover: list-row `mouseenter`/`leave` ↔
+      marker `mouseover`/`out` both drive `highlightId`; an effect toggles a
+      `.map-pin--active` class on the matching marker element, and `.mrow.active`
+      shades the row. TDD: `mapViewport.test.ts` + new `MapPage.test.ts` cases
+      (viewport filter, hint, hover→marker class, marker hover wiring).
+
+- [ ] _(superseded — original notes)_ **Karte — viewport-filtered list, „X weitere…"
+      hint, and bidirectional hover-highlight.** Today `MapPage.svelte` loads ALL points (`api.publicMap()`),
       drops every marker, and lists every post in the side panel — no viewport
       awareness, clustering, or map↔list link. **DECISIONS (no new dependency):**
       (a) **viewport-filtered side list** — the list shows only posts whose marker is
@@ -138,7 +168,22 @@ Decisions captured with the user 2026-06-01 (recorded inline per item). All TDD,
         and rebuild markers. Drive hover-highlight off enter/leave events, not
         mousemove.
 
-- [ ] **Editor — „Auf großer Karte wählen" modal (deferred-confirm location picker).**
+- [X] **Editor — „Auf großer Karte wählen" modal (deferred-confirm picker) — DONE
+      (Phase 5 #10, 2026-06-01).** New `admin/editor/MapPickerDialog.svelte`: a
+      z-index:2000 modal (above Leaflet 1000, matching `PostEditor`'s `.modal`) with a
+      large map + Nominatim search; clicks/search set a PROVISIONAL marker only, applied
+      to the post on „Standort übernehmen" (disabled until a point exists) and discarded
+      on „Abbrechen"/Escape/×. Leaflet-in-modal grey-tile bug handled: the map is created
+      in the dialog's `$effect` (after the modal is in the DOM) and `invalidateSize()` is
+      called on the next `requestAnimationFrame`. The inline `MapPicker` is UNTOUCHED
+      (critical save path) — the dialog is a separate component reusing `lib/nominatim`;
+      `MetadataSidebar` adds the button + dialog and, on confirm, runs the SAME
+      `handleMapChange` (reverse-geocode + `fillMissingPlace` only-when-empty) and bumps
+      a `{#key}` seed so the inline picker remounts onto the new point. TDD:
+      `MapPickerDialog.test.ts` (provisional/confirm/cancel/Escape/invalidateSize/search)
+      + `MetadataSidebar.test.ts` (open/cancel/confirm wiring). Original notes below.
+
+- [ ] _(superseded by the DONE entry above)_ **Editor — „Auf großer Karte wählen" modal.**
       The inline `MapPicker.svelte` (240 px) sets the location **immediately** on
       click; fine for most cases but cramped for precise picks. **DECISION: keep the
       small inline picker AND add a button „Auf großer Karte wählen"** that opens a
