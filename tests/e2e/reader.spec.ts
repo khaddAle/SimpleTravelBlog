@@ -18,10 +18,13 @@ test('reader can browse landing, archive, map, search to a published post', asyn
   await expect(page.getByRole('link', { name: 'Archiv', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Karte', exact: true })).toBeVisible();
 
-  // Archive: grouped by country; our post appears under its country.
+  // Archive: an accordion with Reise/Land/Jahr grouping. Switch to "Nach Land"
+  // and open the post's country group (it may be collapsed behind a newer one).
   await page.goto('/#/archiv');
-  await expect(page.getByRole('heading', { name: 'Nach Ländern & Reisen' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Italien', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Alle Beiträge' })).toBeVisible();
+  await page.getByRole('button', { name: 'Nach Land' }).click();
+  const land = page.getByRole('button', { name: /Italien/ });
+  if ((await land.getAttribute('aria-expanded')) !== 'true') await land.click();
   await expect(page.getByRole('link', { name: new RegExp(title) })).toBeVisible();
 
   // Map: the post is listed in the places index.

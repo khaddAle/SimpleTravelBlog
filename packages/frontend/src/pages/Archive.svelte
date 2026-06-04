@@ -1,9 +1,8 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
-  import type { PostDto, TripDto } from '@stb/shared';
+  import { onMount } from 'svelte';
+  import type { PublicPostHead, TripDto } from '@stb/shared';
   import { api } from '../lib/api.js';
-  import { groupPosts, type CountryGroup } from '../lib/archive.js';
-  import { coverImageId } from '../lib/posts.js';
+  import { groupBy, type GroupMode, type ArchiveGroup } from '../lib/archive.js';
   import { imageUrl } from '../lib/images.js';
   import { formatDate } from '../lib/dates.js';
   import { countryName } from '../lib/countries.js';
@@ -11,70 +10,51 @@
   import SiteFooter from '../components/SiteFooter.svelte';
   import Photo from '../components/Photo.svelte';
 
-  // One page is small enough that the country/trip grouping stays readable; the
-  // reader pulls more with the "Mehr laden" button rather than numbered pages.
-  const PAGE_SIZE = 20;
+  const MODES: { value: GroupMode; label: string }[] = [
+    { value: 'reise', label: 'Nach Reise' },
+    { value: 'land', label: 'Nach Land' },
+    { value: 'jahr', label: 'Nach Jahr' },
+  ];
 
-  let posts = $state<PostDto[]>([]);
+  let posts = $state<PublicPostHead[]>([]);
   let trips = $state<TripDto[]>([]);
-  let serverTotal = $state(0);
-  let page = $state(0);
   let loading = $state(true);
-  let loadingMore = $state(false);
-  let moreButton = $state<HTMLButtonElement>();
+  let mode = $state<GroupMode>('reise');
+  let openKey = $state<string | null>(null);
 
-  const groups = $derived(groupPosts(posts, trips));
-  const loadedCount = $derived(posts.length);
-  const hasMore = $derived(loadedCount < serverTotal);
-  const summary = $derived(
-    `${loadedCount} ${loadedCount === 1 ? 'Beitrag' : 'Beiträge'} aus ` +
-      `${groups.length} ${groups.length === 1 ? 'Land' : 'Ländern'}, gegliedert nach Reisen.`,
-  );
+  // All heads are pulled once; switching mode is a pure client-side regroup.
+  const groups = $derived(groupBy(mode, posts, trips));
 
-  function countryCount(group: CountryGroup): number {
-    return group.trips.reduce((n, t) => n + t.posts.length, 0);
+  // Keep exactly one group open: when the grouping changes (mode switch or load)
+  // and the open key no longer exists, fall back to the top group.
+  $effect(() => {
+    if (!groups.some((g) => g.key === openKey)) {
+      openKey = groups[0]?.key ?? null;
+    }
+  });
+
+  function toggle(key: string): void {
+    openKey = openKey === key ? null : key;
   }
 
-  function thumb(post: PostDto): string | undefined {
-    const id = post.coverImageId ?? coverImageId(post.blocks);
-    return id ? imageUrl(id, 'thumb') : undefined;
+  function thumb(post: PublicPostHead): string | undefined {
+    return post.coverImageId ? imageUrl(post.coverImageId, 'thumb') : undefined;
+  }
+
+  function count(group: ArchiveGroup): string {
+    const n = group.posts.length;
+    return `${n} ${n === 1 ? 'Beitrag' : 'Beiträge'}`;
   }
 
   onMount(async () => {
     try {
-      const [first, loadedTrips] = await Promise.all([
-        api.publicPosts(1, PAGE_SIZE),
-        api.publicTrips(),
-      ]);
-      posts = first.items;
+      const [heads, loadedTrips] = await Promise.all([api.publicPostHeads(), api.publicTrips()]);
+      posts = heads;
       trips = loadedTrips;
-      serverTotal = first.total;
-      page = 1;
     } finally {
       loading = false;
     }
   });
-
-  async function loadMore(): Promise<void> {
-    if (loadingMore || !hasMore) return;
-    // Appending into the grouped layout scatters new rows into existing country
-    // sections above the button; pin the button to its viewport spot so the page
-    // doesn't jump under the reader's cursor.
-    const before = moreButton?.getBoundingClientRect().top ?? 0;
-    loadingMore = true;
-    try {
-      const next = await api.publicPosts(page + 1, PAGE_SIZE);
-      posts = [...posts, ...next.items];
-      serverTotal = next.total;
-      page += 1;
-    } finally {
-      loadingMore = false;
-    }
-    await tick();
-    const after = moreButton?.getBoundingClientRect().top ?? before;
-    const delta = after - before;
-    if (delta !== 0) window.scrollBy(0, delta);
-  }
 </script>
 
 <SiteHeader current="archiv" />
@@ -82,9 +62,21 @@
 <main class="wrap">
   <div class="arch-intro">
     <p class="eyebrow">Archiv</p>
-    <h1 class="h-page">Nach Ländern &amp; Reisen</h1>
-    {#if !loading && loadedCount > 0}
-      <p class="lede stack-16">{summary}</p>
+    <h1 class="h-page">Alle Beiträge</h1>
+    {#if !loading && posts.length > 0}
+      <div class="modes" role="group" aria-label="Gruppierung">
+        {#each MODES as m (m.value)}
+          <button
+            type="button"
+            class="mode"
+            class:active={mode === m.value}
+            aria-pressed={mode === m.value}
+            onclick={() => (mode = m.value)}
+          >
+            {m.label}
+          </button>
+        {/each}
+      </div>
     {/if}
   </div>
 
@@ -93,46 +85,35 @@
   {:else if groups.length === 0}
     <p class="status">Noch keine Beiträge.</p>
   {:else}
-    {#each groups as group (group.country)}
-      {@const n = countryCount(group)}
-      <section class="arch-country">
-        <div class="country-head">
-          <h2>{countryName(group.country)}</h2>
-          <span class="count">{n} {n === 1 ? 'Beitrag' : 'Beiträge'}</span>
-        </div>
-        {#each group.trips as trip (trip.tripId ?? '_none')}
-          <div class="arch-trip">
-            <h3 class="trip-label">{trip.tripName ?? 'Einzelne Beiträge'}</h3>
-            {#each trip.posts as post (post.id)}
-              <a class="arch-row" href={`#/beitrag/${post.id}`}>
-                <span class="thumb"><Photo src={thumb(post)} ratio="r43" size="sm" /></span>
-                <span class="t">
-                  <h4>{post.title}</h4>
-                  <div class="where">{post.placeName}, {countryName(post.country)}</div>
-                </span>
-                <span class="d">{formatDate(post.postDate)}</span>
-                <span class="go" aria-hidden="true">→</span>
-              </a>
-            {/each}
-          </div>
-        {/each}
-      </section>
-    {/each}
-
-    {#if hasMore}
-      <div class="more">
-        <button
-          class="more-btn"
-          type="button"
-          bind:this={moreButton}
-          onclick={loadMore}
-          disabled={loadingMore}
-        >
-          {loadingMore ? 'Lädt…' : 'Mehr laden'}
-        </button>
-        <p class="more-count">{loadedCount} von {serverTotal} Beiträgen</p>
-      </div>
-    {/if}
+    <div class="accordion">
+      {#each groups as group (group.key)}
+        {@const open = openKey === group.key}
+        <section class="group" class:open>
+          <h2 class="group-head">
+            <button type="button" aria-expanded={open} onclick={() => toggle(group.key)}>
+              <span class="label">{group.label}</span>
+              <span class="count">{count(group)}</span>
+              <span class="chev" aria-hidden="true">{open ? '▾' : '▸'}</span>
+            </button>
+          </h2>
+          {#if open}
+            <div class="group-body">
+              {#each group.posts as post (post.id)}
+                <a class="arch-row" href={`#/beitrag/${post.id}`}>
+                  <span class="thumb"><Photo src={thumb(post)} ratio="r43" size="sm" /></span>
+                  <span class="t">
+                    <h3>{post.title}</h3>
+                    <div class="where">{post.placeName}, {countryName(post.country)}</div>
+                  </span>
+                  <span class="d">{formatDate(post.postDate)}</span>
+                  <span class="go" aria-hidden="true">→</span>
+                </a>
+              {/each}
+            </div>
+          {/if}
+        </section>
+      {/each}
+    </div>
   {/if}
 </main>
 
@@ -142,52 +123,92 @@
   .arch-intro {
     padding: 48px 0 8px;
   }
+  .modes {
+    display: inline-flex;
+    margin-top: 22px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .mode {
+    font: inherit;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    border-right: 1px solid var(--line);
+    padding: 9px 18px;
+    cursor: pointer;
+    transition:
+      background 0.15s,
+      color 0.15s;
+  }
+  .mode:last-child {
+    border-right: 0;
+  }
+  .mode:hover {
+    color: var(--accent);
+  }
+  .mode.active {
+    background: var(--accent);
+    color: #fff;
+  }
   .status {
     padding: 24px 0 60px;
     color: var(--muted);
   }
-  .arch-country {
+  .accordion {
+    margin-top: 36px;
     border-top: 1px solid var(--line);
-    padding-top: 30px;
-    margin-top: 52px;
   }
-  .arch-country:first-of-type {
-    margin-top: 40px;
+  .group {
+    border-bottom: 1px solid var(--line);
   }
-  .country-head {
+  .group-head {
+    margin: 0;
+  }
+  .group-head button {
+    width: 100%;
     display: flex;
     align-items: baseline;
     gap: 14px;
-    margin-bottom: 6px;
+    font: inherit;
+    background: transparent;
+    border: 0;
+    padding: 20px 4px;
+    cursor: pointer;
+    text-align: left;
   }
-  .country-head h2 {
-    font-size: 32px;
+  .group-head .label {
+    font-size: 26px;
     font-weight: 700;
-    letter-spacing: -1px;
-    margin: 0;
+    letter-spacing: -0.6px;
+    color: var(--ink);
   }
-  .country-head .count {
+  .group.open .group-head .label {
+    color: var(--accent);
+  }
+  .group-head .count {
     font-size: 13px;
     font-weight: 500;
     color: var(--faint);
   }
-  .arch-trip {
-    margin-top: 26px;
+  .group-head .chev {
+    margin-left: auto;
+    font-size: 14px;
+    color: var(--faint);
   }
-  .trip-label {
-    font-size: 11.5px;
-    font-weight: 600;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin: 0 0 6px;
+  .group-body {
+    padding-bottom: 14px;
   }
   .arch-row {
     display: flex;
     align-items: center;
     gap: 20px;
     padding: 14px 12px 14px 0;
-    border-bottom: 1px solid var(--line-soft);
+    border-top: 1px solid var(--line-soft);
     text-decoration: none;
     color: inherit;
     border-radius: 4px;
@@ -207,7 +228,7 @@
     flex: 1 1 auto;
     min-width: 0;
   }
-  .arch-row .t h4 {
+  .arch-row .t h3 {
     font-size: 17px;
     font-weight: 600;
     letter-spacing: -0.3px;
@@ -234,48 +255,9 @@
     color: var(--accent);
     transform: translateX(3px);
   }
-  .more {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    padding: 48px 0 64px;
-  }
-  .more-btn {
-    font: inherit;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--ink);
-    background: var(--surface);
-    border: 1px solid var(--line);
-    box-shadow: var(--shadow-frame-sm);
-    padding: 12px 28px;
-    cursor: pointer;
-    transition:
-      border-color 0.15s,
-      color 0.15s;
-  }
-  .more-btn:hover:not(:disabled) {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  .more-btn:disabled {
-    cursor: default;
-    color: var(--faint);
-  }
-  .more-count {
-    font-size: 12.5px;
-    font-weight: 500;
-    color: var(--faint);
-    margin: 0;
-  }
   @media (max-width: 600px) {
-    .arch-country {
-      margin-top: 40px;
-      padding-top: 24px;
-    }
-    .country-head h2 {
-      font-size: 26px;
+    .group-head .label {
+      font-size: 22px;
     }
     .arch-row {
       gap: 14px;
@@ -285,9 +267,6 @@
     }
     .arch-row .go {
       display: none;
-    }
-    .arch-row .d {
-      font-size: 11.5px;
     }
   }
 </style>

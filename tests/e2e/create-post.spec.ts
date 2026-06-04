@@ -37,8 +37,8 @@ test('an unpublished draft is hidden from the reader', async ({ page }) => {
 
   await expect(page.locator('.post-row').filter({ hasText: title })).toContainText('Entwurf');
 
-  // Not present in the public archive.
+  // Not present in the public archive (drafts are hidden).
   await page.goto('/#/archiv');
-  await expect(page.getByRole('heading', { name: 'Nach Ländern & Reisen' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Alle Beiträge' })).toBeVisible();
   await expect(page.getByRole('link', { name: new RegExp(title) })).toHaveCount(0);
 });

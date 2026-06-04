@@ -1,160 +1,151 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import type { PostDto } from '@stb/shared';
+import type { PublicPostHead } from '@stb/shared';
 import { api } from '../lib/api.js';
 import Archive from './Archive.svelte';
 
-function post(id: string, country: string, over: Partial<PostDto> = {}): PostDto {
+function post(id: string, over: Partial<PublicPostHead> = {}): PublicPostHead {
   return {
     id,
     title: id,
-    blocks: [],
     postDate: '2026-01-01T00:00:00.000Z',
-    country,
+    country: 'DE',
     placeName: 'Ort',
-    lat: 0,
-    lng: 0,
-    status: 'published',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
     ...over,
   };
 }
 
+const dolomiten = post('a', {
+  title: 'Drei Tage in den Dolomiten',
+  placeName: 'Südtirol',
+  country: 'IT',
+  postDate: '2026-05-12T00:00:00.000Z',
+  tripId: 't1',
+  coverImageId: 'img1',
+});
+const hallstatt = post('b', {
+  title: 'Morgenlicht über Hallstatt',
+  country: 'DE',
+  postDate: '2026-01-01T00:00:00.000Z',
+  tripId: 't2',
+});
+
 afterEach(() => vi.restoreAllMocks());
 
+function mock(heads: PublicPostHead[]) {
+  const heads$ = vi.spyOn(api, 'publicPostHeads').mockResolvedValue(heads);
+  vi.spyOn(api, 'publicTrips').mockResolvedValue([
+    { id: 't1', name: 'Alpen' },
+    { id: 't2', name: 'Nordsee' },
+  ]);
+  return heads$;
+}
+
 describe('Archive', () => {
-  it('renders the page intro and a summary of countries and posts', async () => {
-    vi.spyOn(api, 'publicPosts').mockResolvedValue({
-      items: [post('a', 'DE', { tripId: 't1' }), post('b', 'FR')],
-      page: 1,
-      pageSize: 100,
-      total: 2,
-    });
-    vi.spyOn(api, 'publicTrips').mockResolvedValue([{ id: 't1', name: 'Alpen' }]);
+  it('renders the intro and the grouping toggle', async () => {
+    mock([dolomiten, hallstatt]);
     render(Archive);
 
     expect(await screen.findByText('Archiv', { selector: '.eyebrow' })).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { level: 1, name: 'Nach Ländern & Reisen' }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText('2 Beiträge aus 2 Ländern, gegliedert nach Reisen.'),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Alle Beiträge' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nach Reise' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nach Land' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nach Jahr' })).toBeInTheDocument();
   });
 
-  it('groups posts by country (German name) and by trip', async () => {
-    vi.spyOn(api, 'publicPosts').mockResolvedValue({
-      items: [post('a', 'DE', { tripId: 't1' }), post('b', 'FR')],
-      page: 1,
-      pageSize: 100,
-      total: 2,
-    });
-    vi.spyOn(api, 'publicTrips').mockResolvedValue([{ id: 't1', name: 'Alpen' }]);
+  it('groups by trip by default with the newest group open', async () => {
+    mock([dolomiten, hallstatt]);
     render(Archive);
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Deutschland' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2, name: 'Frankreich' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 3, name: 'Alpen' })).toBeInTheDocument();
+    // Both group headers render; the newest (Alpen) is open and shows its post.
+    expect(await screen.findByRole('button', { name: /Alpen/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Nordsee/ })).toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { level: 3, name: 'Einzelne Beiträge' }),
-    ).toBeInTheDocument();
+      screen.getByRole('link', { name: /Drei Tage in den Dolomiten/ }),
+    ).toHaveAttribute('href', '#/beitrag/a');
+    // The collapsed Nordsee group's post is not rendered.
+    expect(screen.queryByRole('link', { name: /Morgenlicht über Hallstatt/ })).toBeNull();
   });
 
-  it('renders a post row with thumbnail, title, place and date, linking to the post', async () => {
-    vi.spyOn(api, 'publicPosts').mockResolvedValue({
-      items: [
-        post('a', 'IT', {
-          title: 'Drei Tage in den Dolomiten',
-          placeName: 'Südtirol',
-          postDate: '2026-05-12T00:00:00.000Z',
-          blocks: [{ type: 'image', imageId: 'img1' }],
-        }),
-      ],
-      page: 1,
-      pageSize: 100,
-      total: 1,
-    });
-    vi.spyOn(api, 'publicTrips').mockResolvedValue([]);
+  it('opens one group at a time (accordion)', async () => {
+    const user = userEvent.setup();
+    mock([dolomiten, hallstatt]);
     render(Archive);
+
+    await screen.findByRole('link', { name: /Drei Tage in den Dolomiten/ });
+    await user.click(screen.getByRole('button', { name: /Nordsee/ }));
+
+    expect(
+      await screen.findByRole('link', { name: /Morgenlicht über Hallstatt/ }),
+    ).toBeInTheDocument();
+    // Opening Nordsee closed Alpen.
+    expect(screen.queryByRole('link', { name: /Drei Tage in den Dolomiten/ })).toBeNull();
+  });
+
+  it('regroups by country on mode switch without a refetch', async () => {
+    const user = userEvent.setup();
+    const heads$ = mock([dolomiten, hallstatt]);
+    render(Archive);
+
+    await screen.findByRole('button', { name: /Alpen/ });
+    await user.click(screen.getByRole('button', { name: 'Nach Land' }));
+
+    expect(await screen.findByRole('button', { name: /Italien/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Deutschland/ })).toBeInTheDocument();
+    // Pure client-side regroup — the heads were fetched exactly once.
+    expect(heads$).toHaveBeenCalledTimes(1);
+  });
+
+  it('groups by year when "Nach Jahr" is chosen', async () => {
+    const user = userEvent.setup();
+    mock([
+      post('x', { postDate: '2024-06-01T00:00:00.000Z' }),
+      post('y', { postDate: '2026-03-01T00:00:00.000Z' }),
+    ]);
+    render(Archive);
+
+    await screen.findByRole('button', { name: 'Nach Jahr' });
+    await user.click(screen.getByRole('button', { name: 'Nach Jahr' }));
+    expect(await screen.findByRole('button', { name: /2026/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /2024/ })).toBeInTheDocument();
+  });
+
+  it('pins the "Ohne Reise" bucket to the bottom', async () => {
+    mock([
+      post('lonely', { postDate: '2026-09-01T00:00:00.000Z' }),
+      dolomiten,
+    ]);
+    render(Archive);
+
+    await screen.findByRole('button', { name: /Alpen/ });
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headings[headings.length - 1]).toContain('Ohne Reise');
+  });
+
+  it('renders a post row with thumbnail, place and date', async () => {
+    mock([dolomiten]);
+    const { container } = render(Archive);
 
     const row = await screen.findByRole('link', { name: /Drei Tage in den Dolomiten/ });
     expect(row).toHaveAttribute('href', '#/beitrag/a');
-    expect(
-      screen.getByRole('heading', { level: 4, name: 'Drei Tage in den Dolomiten' }),
-    ).toBeInTheDocument();
     expect(screen.getByText('Südtirol, Italien')).toBeInTheDocument();
     expect(screen.getByText('12. Mai 2026')).toBeInTheDocument();
-    expect(row.querySelector('.thumb .photo .frame.r43 img')).toHaveAttribute(
+    expect(container.querySelector('.thumb .photo .frame.r43 img')).toHaveAttribute(
       'src',
       '/api/public/images/img1/thumb',
     );
   });
 
-  it('shows the per-country post count', async () => {
-    vi.spyOn(api, 'publicPosts').mockResolvedValue({
-      items: [post('a', 'DE'), post('b', 'DE'), post('c', 'FR')],
-      page: 1,
-      pageSize: 100,
-      total: 3,
-    });
-    vi.spyOn(api, 'publicTrips').mockResolvedValue([]);
-    render(Archive);
-
-    expect(await screen.findByText('2 Beiträge')).toBeInTheDocument();
-    expect(screen.getByText('1 Beitrag')).toBeInTheDocument();
-  });
-
   it('marks the Archiv item active in the site header', async () => {
-    vi.spyOn(api, 'publicPosts').mockResolvedValue({ items: [], page: 1, pageSize: 100, total: 0 });
-    vi.spyOn(api, 'publicTrips').mockResolvedValue([]);
+    mock([]);
     render(Archive);
     expect(screen.getByRole('link', { name: 'Archiv' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('shows an empty message', async () => {
-    vi.spyOn(api, 'publicPosts').mockResolvedValue({ items: [], page: 1, pageSize: 100, total: 0 });
-    vi.spyOn(api, 'publicTrips').mockResolvedValue([]);
+    mock([]);
     render(Archive);
     expect(await screen.findByText('Noch keine Beiträge.')).toBeInTheDocument();
-  });
-
-  it('shows "Mehr laden" with a progress counter and appends the next page', async () => {
-    const user = userEvent.setup();
-    const pp = vi
-      .spyOn(api, 'publicPosts')
-      .mockResolvedValueOnce({ items: [post('a', 'DE')], page: 1, pageSize: 20, total: 2 })
-      .mockResolvedValueOnce({ items: [post('b', 'FR')], page: 2, pageSize: 20, total: 2 });
-    vi.spyOn(api, 'publicTrips').mockResolvedValue([]);
-    render(Archive);
-
-    expect(
-      await screen.findByRole('heading', { level: 2, name: 'Deutschland' }),
-    ).toBeInTheDocument();
-    expect(pp).toHaveBeenLastCalledWith(1, 20);
-    expect(screen.getByText('1 von 2 Beiträgen')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Mehr laden' }));
-
-    expect(
-      await screen.findByRole('heading', { level: 2, name: 'Frankreich' }),
-    ).toBeInTheDocument();
-    expect(pp).toHaveBeenLastCalledWith(2, 20);
-    // Everything is loaded now → the button disappears.
-    expect(screen.queryByRole('button', { name: 'Mehr laden' })).toBeNull();
-  });
-
-  it('hides "Mehr laden" when the first page already holds everything', async () => {
-    vi.spyOn(api, 'publicPosts').mockResolvedValue({
-      items: [post('a', 'DE')],
-      page: 1,
-      pageSize: 20,
-      total: 1,
-    });
-    vi.spyOn(api, 'publicTrips').mockResolvedValue([]);
-    render(Archive);
-    await screen.findByRole('heading', { level: 2, name: 'Deutschland' });
-    expect(screen.queryByRole('button', { name: 'Mehr laden' })).toBeNull();
   });
 });
