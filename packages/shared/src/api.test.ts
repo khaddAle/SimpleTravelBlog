@@ -5,6 +5,8 @@ import {
   createPostRequestSchema,
   updatePostRequestSchema,
   postDtoSchema,
+  postDraftSchema,
+  draftAckSchema,
   publicPostHeadSchema,
   postSummarySchema,
   createTripRequestSchema,
@@ -158,6 +160,73 @@ describe('postDtoSchema', () => {
 
   it('leaves coverImageId undefined when omitted', () => {
     expect(postDtoSchema.parse(base).coverImageId).toBeUndefined();
+  });
+
+  it('leaves draft undefined when omitted', () => {
+    expect(postDtoSchema.parse(base).draft).toBeUndefined();
+  });
+
+  it('carries an optional draft snapshot', () => {
+    const parsed = postDtoSchema.parse({
+      ...base,
+      draft: {
+        title: 'Neuer Titel',
+        postDate: '2026-05-02T00:00:00.000Z',
+        country: 'DE',
+        placeName: 'Zugspitze',
+        lat: 47.42,
+        lng: 10.98,
+        blocks: [{ type: 'paragraph', text: 'überarbeitet' }],
+        savedAt: '2026-05-02T10:00:00.000Z',
+      },
+    });
+    expect(parsed.draft?.title).toBe('Neuer Titel');
+    expect(parsed.draft?.savedAt).toBe('2026-05-02T10:00:00.000Z');
+  });
+});
+
+describe('postDraftSchema', () => {
+  const draft = {
+    title: 'Berge',
+    postDate: '2026-05-01T00:00:00.000Z',
+    country: 'DE',
+    placeName: 'Zugspitze',
+    lat: 47.42,
+    lng: 10.98,
+    blocks: [{ type: 'paragraph', text: 'hallo' }],
+    savedAt: '2026-05-01T09:00:00.000Z',
+  };
+
+  it('accepts the editable payload plus a savedAt', () => {
+    const parsed = postDraftSchema.parse(draft);
+    expect(parsed.title).toBe('Berge');
+    expect(parsed.savedAt).toBe('2026-05-01T09:00:00.000Z');
+  });
+
+  it('requires savedAt', () => {
+    const { savedAt: _omit, ...withoutSavedAt } = draft;
+    expect(() => postDraftSchema.parse(withoutSavedAt)).toThrow();
+  });
+
+  it('rejects an invalid block in the draft body', () => {
+    expect(() => postDraftSchema.parse({ ...draft, blocks: [{ type: 'nope' }] })).toThrow();
+  });
+
+  it('carries an optional coverImageId and tripId', () => {
+    const parsed = postDraftSchema.parse({ ...draft, coverImageId: 'cov1', tripId: 'trip01' });
+    expect(parsed.coverImageId).toBe('cov1');
+    expect(parsed.tripId).toBe('trip01');
+  });
+});
+
+describe('draftAckSchema', () => {
+  it('carries savedAt and the pending-draft flag', () => {
+    const parsed = draftAckSchema.parse({ savedAt: '2026-05-01T09:00:00.000Z', hasPendingDraft: true });
+    expect(parsed.hasPendingDraft).toBe(true);
+  });
+
+  it('requires hasPendingDraft to be a boolean', () => {
+    expect(() => draftAckSchema.parse({ savedAt: 'x', hasPendingDraft: 'yes' })).toThrow();
   });
 });
 

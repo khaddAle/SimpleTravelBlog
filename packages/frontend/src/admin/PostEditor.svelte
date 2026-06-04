@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { push } from 'svelte-spa-router';
-  import type { TripDto, CreatePostRequest, UpdatePostRequest, Block } from '@stb/shared';
+  import { onMount, onDestroy } from 'svelte';
+  import { push, replace } from 'svelte-spa-router';
+  import type { TripDto, CreatePostRequest, PostDto, PostDraft, Block } from '@stb/shared';
   import { api, ApiError } from '../lib/api.js';
   import type { PostMetadata } from '../lib/types.js';
   import { collectImageIds } from '../lib/imageRefs.js';
   import { navGuard } from '../lib/navGuard.js';
+  import { createAutosaver } from '../lib/autosave.js';
   import AdminLayout from './AdminLayout.svelte';
   import MetadataSidebar from './editor/MetadataSidebar.svelte';
   import BlockEditor from './editor/BlockEditor.svelte';
@@ -23,23 +24,42 @@
     lng: 10.4515,
   });
   let blocks = $state<Block[]>([]);
+  // The post's id once it exists. New posts have none until autosave (or publish)
+  // creates them; kept separate from the route's `editId` so the create→edit URL
+  // swap (`replace`) can't retrigger the one-shot load in onMount.
+  let postId = $state<string | undefined>(undefined);
   // Saved status, seeded from the loaded post (new posts start as a draft);
   // drives the status pill in the bar.
   let status = $state<'draft' | 'published'>('draft');
+  // A published post has unpublished autosaved edits stashed in a draft snapshot.
+  let hasPendingDraft = $state(false);
+  // Autosave lifecycle, for the bar's save indicator.
+  let saveState = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  // Bumped to remount the block editor + metadata sidebar when we reseed the
+  // form externally (discarding a draft): both copy their props once on mount.
+  let reseedToken = $state(0);
   // Images already placed in this (possibly unsaved) post — hidden from the
   // "Nur unbenutzte" picker so freshly-selected images stop showing as unused.
   const usedImageIds = $derived(collectImageIds(blocks, metadata.coverImageId));
   let trips = $state<TripDto[]>([]);
   let loading = $state(true);
-  let saving = $state(false);
+  let busy = $state(false);
   let error = $state('');
 
-  // Unsaved-changes tracking: snapshot the loaded state, then compare live.
-  // `null` until the post has loaded, so we never report dirty mid-load.
-  let initialSnapshot = $state<string | null>(null);
-  const isDirty = $derived.by(
-    () => initialSnapshot !== null && JSON.stringify({ metadata, blocks }) !== initialSnapshot,
+  // Unsaved-changes tracking: the working snapshot vs the last successful
+  // autosave. `null` baseline until the post has loaded, so we never report
+  // dirty mid-load. "Dirty" here means *not yet autosaved* (not "not published").
+  let lastSavedSnapshot = $state<string | null>(null);
+  const workingSnapshot = $derived(JSON.stringify({ metadata, blocks }));
+  const unsavedDirty = $derived(
+    lastSavedSnapshot !== null && workingSnapshot !== lastSavedSnapshot,
   );
+
+  const autosaver = createAutosaver({
+    delayMs: 2000,
+    maxWaitMs: 15000,
+    save: () => autosaveNow(),
+  });
 
   // Image-picker modal: a Promise-based bridge so BlockEditor can `await` a pick.
   let pickerMode = $state<null | 'single' | 'multiple'>(null);
@@ -52,40 +72,69 @@
     selected?: string[];
   }
 
+  /** Seed the editable form from a post or a draft snapshot (shared field set). */
+  function seedFrom(src: PostDto | PostDraft): void {
+    metadata = {
+      title: src.title,
+      postDate: src.postDate,
+      country: src.country,
+      placeName: src.placeName,
+      lat: src.lat,
+      lng: src.lng,
+      ...(src.subtitle ? { subtitle: src.subtitle } : {}),
+      ...(src.tripId ? { tripId: src.tripId } : {}),
+      ...(src.coverImageId ? { coverImageId: src.coverImageId } : {}),
+    };
+    blocks = src.blocks;
+  }
+
   onMount(async () => {
     try {
       trips = await api.listTrips();
       if (editId) {
+        postId = editId;
         const post = await api.getPost(editId);
         status = post.status;
-        metadata = {
-          title: post.title,
-          postDate: post.postDate,
-          country: post.country,
-          placeName: post.placeName,
-          lat: post.lat,
-          lng: post.lng,
-          ...(post.subtitle ? { subtitle: post.subtitle } : {}),
-          ...(post.tripId ? { tripId: post.tripId } : {}),
-          ...(post.coverImageId ? { coverImageId: post.coverImageId } : {}),
-        };
-        blocks = post.blocks;
+        hasPendingDraft = post.draft != null;
+        // Continue a pending draft if one exists; otherwise seed from the live post.
+        seedFrom(post.draft ?? post);
       }
     } finally {
       // Baseline for dirty-tracking, captured after any loaded data is applied.
-      initialSnapshot = JSON.stringify({ metadata, blocks });
+      lastSavedSnapshot = JSON.stringify({ metadata, blocks });
       loading = false;
     }
   });
 
+  // Autosave on edit. Gated so a brand-new post stays in memory (with a hint)
+  // until its required fields are valid — there's nothing to persist before then.
+  $effect(() => {
+    const snapshot = workingSnapshot;
+    if (loading || lastSavedSnapshot === null) return;
+    if (snapshot === lastSavedSnapshot) return;
+    if (!postId && missingRequiredFields().length > 0) return;
+    autosaver.schedule();
+  });
+
+  // Flush a pending autosave when the tab is hidden (best-effort) and on teardown
+  // (in-app navigation away), so debounced edits aren't lost.
+  $effect(() => {
+    const onHide = (): void => {
+      if (document.visibilityState === 'hidden') void autosaver.flush();
+    };
+    document.addEventListener('visibilitychange', onHide);
+    return () => document.removeEventListener('visibilitychange', onHide);
+  });
+  onDestroy(() => void autosaver.flush());
+
   // In-app departures (admin nav, logout) consult this guard; it confirms only
-  // while there are unsaved edits.
-  $effect(() => navGuard.register(() => isDirty));
+  // while there are edits not yet captured by autosave.
+  $effect(() => navGuard.register(() => unsavedDirty));
 
   // Tab close / reload / external navigation: warn via the browser's native
   // prompt, but only while dirty (attached/detached as the flag flips).
   $effect(() => {
-    if (!isDirty) return;
+    if (!unsavedDirty) return;
     const handler = (event: BeforeUnloadEvent): void => {
       event.preventDefault();
       event.returnValue = '';
@@ -151,49 +200,113 @@
     };
   }
 
-  async function save(next: 'draft' | 'published'): Promise<void> {
+  function saveFailed(err: unknown): void {
+    // Surface the server's reason for an unexpected failure; keep the plain
+    // generic message for non-API errors.
+    error =
+      err instanceof ApiError
+        ? `Speichern fehlgeschlagen: ${err.message}`
+        : 'Speichern fehlgeschlagen.';
+  }
+
+  /**
+   * One autosave pass, run by the autosaver at fire time so it reads the latest
+   * content. A never-created post is created (as a draft); an existing post saves
+   * a draft snapshot — which the server applies to the live doc for a draft post,
+   * or stashes without touching the live article for a published one.
+   */
+  async function autosaveNow(): Promise<void> {
+    if (!postId && missingRequiredFields().length > 0) return;
+    const snapshot = workingSnapshot;
+    const body = buildBody();
+    error = '';
+    saveState = 'saving';
+    try {
+      if (!postId) {
+        const created = await api.createPost(body);
+        postId = created.id;
+        status = created.status;
+        // Swap the new-post URL for the edit URL via the router (keeps the load
+        // in onMount one-shot, so this doesn't retrigger a getPost).
+        replace(`/admin/beitrag/${created.id}`);
+      } else {
+        const ack = await api.savePostDraft(postId, body);
+        hasPendingDraft = ack.hasPendingDraft;
+      }
+      lastSavedSnapshot = snapshot;
+      saveState = 'saved';
+    } catch (err) {
+      saveState = 'error';
+      saveFailed(err);
+    }
+  }
+
+  async function publish(): Promise<void> {
     error = '';
     const missing = missingRequiredFields();
     if (missing.length > 0) {
       error = `Bitte Pflichtfelder ausfüllen: ${missing.join(', ')}.`;
       return;
     }
-    saving = true;
+    busy = true;
+    autosaver.cancel();
     try {
-      if (editId) {
-        const body: UpdatePostRequest = { ...buildBody(), status: next };
-        await api.updatePost(editId, body);
-      } else {
+      if (!postId) {
         const created = await api.createPost(buildBody());
-        if (next === 'published') await api.updatePost(created.id, { status: 'published' });
+        postId = created.id;
+      } else {
+        // Make sure the latest edit is persisted before promoting it.
+        await api.savePostDraft(postId, buildBody());
       }
-      status = next;
-      // Saved state is now the baseline, so leaving afterwards isn't guarded.
-      initialSnapshot = JSON.stringify({ metadata, blocks });
+      await api.publishPost(postId);
+      status = 'published';
+      hasPendingDraft = false;
+      lastSavedSnapshot = JSON.stringify({ metadata, blocks });
       push('/admin');
     } catch (err) {
-      // Surface the server's reason for an unexpected failure; keep the plain
-      // generic message for non-API errors.
-      error =
-        err instanceof ApiError
-          ? `Speichern fehlgeschlagen: ${err.message}`
-          : 'Speichern fehlgeschlagen.';
+      saveFailed(err);
     } finally {
-      saving = false;
+      busy = false;
+    }
+  }
+
+  async function discard(): Promise<void> {
+    if (!postId) return;
+    if (!globalThis.confirm('Nicht veröffentlichte Änderungen verwerfen?')) return;
+    error = '';
+    busy = true;
+    autosaver.cancel();
+    try {
+      const post = await api.discardDraft(postId);
+      seedFrom(post);
+      status = post.status;
+      hasPendingDraft = false;
+      lastSavedSnapshot = JSON.stringify({ metadata, blocks });
+      saveState = 'idle';
+      reseedToken += 1; // remount the form onto the reverted state
+
+    } catch (err) {
+      saveFailed(err);
+    } finally {
+      busy = false;
     }
   }
 </script>
 
 {#snippet barActions()}
   {#if !loading}
-    {#if isDirty}
+    {#if saveState === 'saving'}
+      <span class="saved">Speichert…</span>
+    {:else if unsavedDirty}
       <span class="saved">Ungespeicherte Änderungen</span>
+    {:else if saveState === 'saved'}
+      <span class="saved">Gespeichert</span>
     {/if}
     <span class="pill {status === 'published' ? 'pub' : 'draft'}">
       {status === 'published' ? 'Veröffentlicht' : 'Entwurf'}
     </span>
-    {#if editId}
-      <a class="btn ghost preview" href={`#/beitrag/${editId}`} target="_blank" rel="noopener">
+    {#if postId}
+      <a class="btn ghost preview" href={`#/beitrag/${postId}`} target="_blank" rel="noopener">
         Vorschau
       </a>
     {/if}
@@ -208,30 +321,39 @@
       <p role="alert" class="err">{error}</p>
     {/if}
     <div class="editor-wrap">
-      <div class="sheet">
-        <BlockEditor {blocks} onChange={(next) => (blocks = next)} {pickImage} {pickGallery} />
-      </div>
+      {#key reseedToken}
+        <div class="sheet">
+          <BlockEditor {blocks} onChange={(next) => (blocks = next)} {pickImage} {pickGallery} />
+        </div>
+      {/key}
       <aside class="side">
         <div class="panel">
           <h3>Status</h3>
+          {#if hasPendingDraft}
+            <p class="pending-note">Nicht veröffentlichte Änderungen</p>
+          {/if}
           <button
             type="button"
             class="btn primary pub-btn"
-            disabled={saving}
-            onclick={() => save('published')}
+            disabled={busy}
+            onclick={publish}
           >
             Veröffentlichen
           </button>
-          <button
-            type="button"
-            class="btn draft-btn"
-            disabled={saving}
-            onclick={() => save('draft')}
-          >
-            Entwurf speichern
-          </button>
+          {#if hasPendingDraft}
+            <button
+              type="button"
+              class="btn draft-btn"
+              disabled={busy}
+              onclick={discard}
+            >
+              Änderungen verwerfen
+            </button>
+          {/if}
         </div>
-        <MetadataSidebar {metadata} {trips} onChange={(next) => (metadata = next)} {pickImage} />
+        {#key reseedToken}
+          <MetadataSidebar {metadata} {trips} onChange={(next) => (metadata = next)} {pickImage} />
+        {/key}
       </aside>
     </div>
   {/if}
@@ -244,7 +366,7 @@
           initialOrphansOnly={pickerOrphansOnly}
           initialSelected={pickerSelected}
           excludeIds={usedImageIds}
-          excludePostId={editId}
+          excludePostId={postId}
           onSelect={onPickerSelect}
           onCancel={onPickerCancel}
         />
@@ -315,6 +437,15 @@
     text-transform: uppercase;
     color: var(--faint);
     margin: 0 0 14px;
+  }
+  .pending-note {
+    margin: 0 0 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #2f5597;
+    background: #dde6f5;
+    padding: 8px 11px;
+    border-radius: 7px;
   }
   .pub-btn {
     width: 100%;

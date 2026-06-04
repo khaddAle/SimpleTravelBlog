@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { tick } from 'svelte';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import type { PostDto } from '@stb/shared';
@@ -6,7 +7,11 @@ import { auth } from '../lib/auth.svelte.js';
 import { api } from '../lib/api.js';
 
 const push = vi.fn();
-vi.mock('svelte-spa-router', () => ({ push: (...args: unknown[]) => push(...args) }));
+const replace = vi.fn();
+vi.mock('svelte-spa-router', () => ({
+  push: (...args: unknown[]) => push(...args),
+  replace: (...args: unknown[]) => replace(...args),
+}));
 
 // PostEditor → MetadataSidebar → MapPicker mounts Leaflet; stub it.
 vi.mock('leaflet', () => {
@@ -22,7 +27,7 @@ vi.mock('leaflet', () => {
 
 import PostEditor from './PostEditor.svelte';
 
-function samplePost(): PostDto {
+function samplePost(over: Partial<PostDto> = {}): PostDto {
   return {
     id: 'p1',
     title: 'Berge',
@@ -35,8 +40,20 @@ function samplePost(): PostDto {
     status: 'draft',
     createdAt: '2026-03-05T00:00:00.000Z',
     updatedAt: '2026-03-05T00:00:00.000Z',
+    ...over,
   };
 }
+
+const sampleDraft = () => ({
+  title: 'Entwurf-Titel',
+  postDate: '2026-03-05T00:00:00.000Z',
+  country: 'DE',
+  placeName: 'Zugspitze',
+  lat: 47.42,
+  lng: 10.98,
+  blocks: [{ type: 'paragraph' as const, text: 'entwurf' }],
+  savedAt: '2026-03-06T00:00:00.000Z',
+});
 
 /** Fill the metadata the post DTO requires (title + Land + Ortsname). */
 async function fillRequiredMeta(
@@ -58,42 +75,75 @@ async function insertBlock(
   await user.click(screen.getByRole('button', { name: typeLabel }));
 }
 
+/**
+ * Deterministically flush a pending (debounced) autosave: hiding the tab calls
+ * the editor's visibilitychange handler, which flushes immediately — no need to
+ * wait out the 2s debounce in tests.
+ */
+async function flushAutosave(): Promise<void> {
+  await tick();
+  Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+  document.dispatchEvent(new Event('visibilitychange'));
+}
+
 beforeEach(() => {
   push.mockClear();
+  replace.mockClear();
   auth.user = { id: 'u1', username: 'mum', role: 'admin' };
+  // Benign defaults so an unmount-time autosave flush is always harmless.
   vi.spyOn(api, 'listTrips').mockResolvedValue([]);
+  vi.spyOn(api, 'createPost').mockResolvedValue(samplePost());
+  vi.spyOn(api, 'savePostDraft').mockResolvedValue({ savedAt: 'x', hasPendingDraft: false });
+  vi.spyOn(api, 'publishPost').mockResolvedValue(samplePost({ status: 'published' }));
+  vi.spyOn(api, 'discardDraft').mockResolvedValue(samplePost());
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+});
 
 describe('PostEditor (create)', () => {
-  it('creates a draft from entered content', async () => {
+  it('autosaves a new post by creating it as a draft, then swaps to the edit URL', async () => {
     const user = userEvent.setup();
     const create = vi.spyOn(api, 'createPost').mockResolvedValue(samplePost());
     render(PostEditor, {});
 
     await fillRequiredMeta(user);
     await insertBlock(user, 'Absatz');
-    await user.click(screen.getByRole('button', { name: 'Entwurf speichern' }));
+    await flushAutosave();
 
-    await waitFor(() => {
+    await waitFor(() =>
       expect(create).toHaveBeenCalledWith(
         expect.objectContaining({
           title: 'Neue Reise',
           blocks: [{ type: 'paragraph', text: '' }],
         }),
-      );
-    });
-    expect(push).toHaveBeenCalledWith('/admin');
+      ),
+    );
+    expect(replace).toHaveBeenCalledWith('/admin/beitrag/p1');
+    expect(push).not.toHaveBeenCalled();
   });
 
-  it('publishes by creating then patching status', async () => {
+  it('does not autosave a new post until the required fields are valid', async () => {
     const user = userEvent.setup();
-    vi.spyOn(api, 'createPost').mockResolvedValue(samplePost());
-    const patch = vi.spyOn(api, 'updatePost').mockResolvedValue(samplePost());
+    const create = vi.spyOn(api, 'createPost').mockResolvedValue(samplePost());
+    render(PostEditor, {});
+    await user.type(await screen.findByLabelText('Titel'), 'Nur Titel');
+    await flushAutosave();
+    // Land + Ortsname still missing → nothing to persist yet.
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('publishes a new post by creating then publishing it', async () => {
+    const user = userEvent.setup();
+    const create = vi.spyOn(api, 'createPost').mockResolvedValue(samplePost());
+    const pub = vi.spyOn(api, 'publishPost').mockResolvedValue(samplePost({ status: 'published' }));
     render(PostEditor, {});
     await fillRequiredMeta(user);
     await user.click(screen.getByRole('button', { name: 'Veröffentlichen' }));
-    await waitFor(() => expect(patch).toHaveBeenCalledWith('p1', { status: 'published' }));
+    await waitFor(() => expect(pub).toHaveBeenCalledWith('p1'));
+    expect(create).toHaveBeenCalled();
+    expect(push).toHaveBeenCalledWith('/admin');
   });
 
   it('opens and cancels the image picker modal', async () => {
@@ -117,13 +167,13 @@ describe('PostEditor (create)', () => {
     expect(screen.getByLabelText('Nur unbenutzte')).toBeChecked();
   });
 
-  it('blocks save and names the missing required fields when Land/Ortsname are empty', async () => {
+  it('blocks publish and names the missing required fields when Land/Ortsname are empty', async () => {
     const user = userEvent.setup();
     const create = vi.spyOn(api, 'createPost').mockResolvedValue(samplePost());
     render(PostEditor, {});
     const title = await screen.findByLabelText('Titel');
     await user.type(title, 'Bilder-Optionen');
-    await user.click(screen.getByRole('button', { name: 'Entwurf speichern' }));
+    await user.click(screen.getByRole('button', { name: 'Veröffentlichen' }));
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Land');
@@ -146,12 +196,12 @@ describe('PostEditor (create)', () => {
     expect(await screen.findByText('Ungespeicherte Änderungen')).toBeInTheDocument();
   });
 
-  it('shows an error when saving fails', async () => {
+  it('shows an error when publishing fails', async () => {
     const user = userEvent.setup();
     vi.spyOn(api, 'createPost').mockRejectedValue(new Error('boom'));
     render(PostEditor, {});
     await fillRequiredMeta(user);
-    await user.click(screen.getByRole('button', { name: 'Entwurf speichern' }));
+    await user.click(screen.getByRole('button', { name: 'Veröffentlichen' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Speichern fehlgeschlagen.');
     expect(push).not.toHaveBeenCalled();
   });
@@ -209,31 +259,106 @@ describe('PostEditor (edit)', () => {
   });
 
   it('shows a published status pill and a preview link when editing', async () => {
-    vi.spyOn(api, 'getPost').mockResolvedValue({ ...samplePost(), status: 'published' });
+    vi.spyOn(api, 'getPost').mockResolvedValue(samplePost({ status: 'published' }));
     render(PostEditor, { params: { id: 'p1' } });
     await screen.findByLabelText('Titel');
     expect(screen.getByText('Veröffentlicht', { selector: '.pill' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Vorschau' })).toHaveAttribute('href', '#/beitrag/p1');
   });
 
-  it('saves edits with updatePost', async () => {
+  it('autosaves edits as a draft snapshot', async () => {
     const user = userEvent.setup();
     vi.spyOn(api, 'getPost').mockResolvedValue(samplePost());
-    const patch = vi.spyOn(api, 'updatePost').mockResolvedValue(samplePost());
+    const saveDraft = vi
+      .spyOn(api, 'savePostDraft')
+      .mockResolvedValue({ savedAt: 'x', hasPendingDraft: false });
+    render(PostEditor, { params: { id: 'p1' } });
+    const title = await screen.findByLabelText('Titel');
+    await user.clear(title);
+    await user.type(title, 'Berge neu');
+    await flushAutosave();
+    await waitFor(() =>
+      expect(saveDraft).toHaveBeenCalledWith('p1', expect.objectContaining({ title: 'Berge neu' })),
+    );
+  });
+
+  it('keeps an existing cover image when autosaving', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'getPost').mockResolvedValue(samplePost({ coverImageId: 'cov1' }));
+    const saveDraft = vi
+      .spyOn(api, 'savePostDraft')
+      .mockResolvedValue({ savedAt: 'x', hasPendingDraft: false });
+    render(PostEditor, { params: { id: 'p1' } });
+    const title = await screen.findByLabelText('Titel');
+    await user.clear(title);
+    await user.type(title, 'Berge cover');
+    await flushAutosave();
+    await waitFor(() =>
+      expect(saveDraft).toHaveBeenCalledWith('p1', expect.objectContaining({ coverImageId: 'cov1' })),
+    );
+  });
+
+  it('publishes an existing post (persists the latest edit, then promotes it)', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'getPost').mockResolvedValue(samplePost());
+    const saveDraft = vi
+      .spyOn(api, 'savePostDraft')
+      .mockResolvedValue({ savedAt: 'x', hasPendingDraft: true });
+    const pub = vi.spyOn(api, 'publishPost').mockResolvedValue(samplePost({ status: 'published' }));
     render(PostEditor, { params: { id: 'p1' } });
     await screen.findByLabelText('Titel');
-    await user.click(screen.getByRole('button', { name: 'Entwurf speichern' }));
+    await user.click(screen.getByRole('button', { name: 'Veröffentlichen' }));
+    await waitFor(() => expect(pub).toHaveBeenCalledWith('p1'));
+    expect(saveDraft).toHaveBeenCalled();
+    expect(push).toHaveBeenCalledWith('/admin');
+  });
+
+  it('flags a pending draft after autosaving an edit to a published post', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'getPost').mockResolvedValue(samplePost({ status: 'published' }));
+    vi.spyOn(api, 'savePostDraft').mockResolvedValue({ savedAt: 'x', hasPendingDraft: true });
+    render(PostEditor, { params: { id: 'p1' } });
+    const title = await screen.findByLabelText('Titel');
+    await user.clear(title);
+    await user.type(title, 'Berge editiert');
+    await flushAutosave();
+    expect(await screen.findByText('Nicht veröffentlichte Änderungen')).toBeInTheDocument();
+  });
+
+  it('seeds the form from a pending draft and offers to discard it', async () => {
+    vi.spyOn(api, 'getPost').mockResolvedValue(
+      samplePost({ status: 'published', title: 'Live', draft: sampleDraft() }),
+    );
+    render(PostEditor, { params: { id: 'p1' } });
+    const title = (await screen.findByLabelText('Titel')) as HTMLInputElement;
+    expect(title.value).toBe('Entwurf-Titel');
+    expect(screen.getByText('Nicht veröffentlichte Änderungen')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Änderungen verwerfen' })).toBeInTheDocument();
+  });
+
+  it('discards a pending draft and reverts to the live article', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.spyOn(api, 'getPost').mockResolvedValue(
+      samplePost({ status: 'published', title: 'Live', draft: sampleDraft() }),
+    );
+    const discardSpy = vi
+      .spyOn(api, 'discardDraft')
+      .mockResolvedValue(samplePost({ status: 'published', title: 'Live' }));
+    render(PostEditor, { params: { id: 'p1' } });
+    await screen.findByLabelText('Titel');
+    await user.click(screen.getByRole('button', { name: 'Änderungen verwerfen' }));
+    await waitFor(() => expect(discardSpy).toHaveBeenCalledWith('p1'));
     await waitFor(() =>
-      expect(patch).toHaveBeenCalledWith('p1', expect.objectContaining({ status: 'draft' })),
+      expect((screen.getByLabelText('Titel') as HTMLInputElement).value).toBe('Live'),
     );
   });
 
   it('hides images already used by the post from a fresh gallery picker', async () => {
     const user = userEvent.setup();
-    vi.spyOn(api, 'getPost').mockResolvedValue({
-      ...samplePost(),
-      blocks: [{ type: 'gallery', imageIds: ['b'] }],
-    });
+    vi.spyOn(api, 'getPost').mockResolvedValue(
+      samplePost({ blocks: [{ type: 'gallery', imageIds: ['b'] }] }),
+    );
     const img = (id: string, filename: string) => ({
       id,
       originalFilename: filename,
@@ -258,20 +383,5 @@ describe('PostEditor (edit)', () => {
     expect(await screen.findByLabelText('alpha.jpg')).toBeInTheDocument();
     // 'b' is already used by the post's gallery → hidden from the unused picker.
     expect(screen.queryByLabelText('beta.jpg')).toBeNull();
-  });
-
-  it('loads an existing cover image and preserves it on save', async () => {
-    const user = userEvent.setup();
-    vi.spyOn(api, 'getPost').mockResolvedValue({ ...samplePost(), coverImageId: 'cov1' });
-    const patch = vi.spyOn(api, 'updatePost').mockResolvedValue(samplePost());
-    render(PostEditor, { params: { id: 'p1' } });
-    await screen.findByLabelText('Titel');
-    await user.click(screen.getByRole('button', { name: 'Entwurf speichern' }));
-    await waitFor(() =>
-      expect(patch).toHaveBeenCalledWith(
-        'p1',
-        expect.objectContaining({ coverImageId: 'cov1' }),
-      ),
-    );
   });
 });

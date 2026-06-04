@@ -40,6 +40,16 @@ describe('posts + trips integration', () => {
   const createPost = (body: Record<string, unknown>) =>
     auth.agent.post('/api/posts').set('x-csrf-token', auth.csrf).send(body);
 
+  const saveDraft = (id: string, body: Record<string, unknown>) =>
+    auth.agent.put(`/api/posts/${id}/draft`).set('x-csrf-token', auth.csrf).send(body);
+  const publishPost = (id: string) =>
+    auth.agent.post(`/api/posts/${id}/publish`).set('x-csrf-token', auth.csrf);
+  const discardDraft = (id: string) =>
+    auth.agent.post(`/api/posts/${id}/discard-draft`).set('x-csrf-token', auth.csrf);
+
+  const publishedPayload = (over: Record<string, unknown> = {}) =>
+    postPayload({ status: 'published', publishedAt: '2020-01-01T00:00:00.000Z', ...over });
+
   it('rejects an unauthenticated create with 401', async () => {
     const res = await request(app.server).post('/api/posts').send(postPayload());
     expect(res.status).toBe(401);
@@ -189,6 +199,132 @@ describe('posts + trips integration', () => {
       .send({ title: 'Neu' });
     expect(patched.body.post.title).toBe('Neu');
     expect(patched.body.post.tripId).toBe(trip.body.trip.id);
+  });
+
+  it('autosaves a draft on a published post without touching the live article or updatedAt', async () => {
+    const created = await createPost(publishedPayload());
+    const id = created.body.post.id;
+    const liveUpdatedAt = created.body.post.updatedAt;
+
+    const ack = await saveDraft(
+      id,
+      postPayload({ title: 'Geänderter Titel', blocks: [{ type: 'paragraph', text: 'Neuer Text' }] }),
+    );
+    expect(ack.status).toBe(200);
+    expect(ack.body).toEqual({ savedAt: expect.any(String), hasPendingDraft: true });
+
+    // The anonymous reader still sees the original, published content.
+    const pub = await request(app.server).get(`/api/public/posts/${id}`);
+    expect(pub.body.post.title).toBe('Berge');
+
+    // The admin fetch carries the draft; live updatedAt is unchanged (draft-only save).
+    const admin = await auth.agent.get(`/api/posts/${id}`);
+    expect(admin.body.post.title).toBe('Berge');
+    expect(admin.body.post.draft.title).toBe('Geänderter Titel');
+    expect(admin.body.post.updatedAt).toBe(liveUpdatedAt);
+
+    // The admin list flags the pending draft.
+    const list = await auth.agent.get('/api/posts');
+    const row = list.body.posts.find((p: { id: string }) => p.id === id);
+    expect(row.hasPendingDraft).toBe(true);
+  });
+
+  it('publishes a pending draft, promoting it to the live article and clearing it', async () => {
+    const created = await createPost(publishedPayload());
+    const id = created.body.post.id;
+    await saveDraft(
+      id,
+      postPayload({ title: 'Finale Fassung', blocks: [{ type: 'paragraph', text: 'fertig' }] }),
+    );
+
+    const pub = await publishPost(id);
+    expect(pub.status).toBe(200);
+    expect(pub.body.post.title).toBe('Finale Fassung');
+    expect(pub.body.post.draft).toBeUndefined();
+    // publishedAt is preserved from the first publish (promoting an edit must not move it).
+    expect(pub.body.post.publishedAt).toBe('2020-01-01T00:00:00.000Z');
+
+    const reader = await request(app.server).get(`/api/public/posts/${id}`);
+    expect(reader.body.post.title).toBe('Finale Fassung');
+  });
+
+  it('discards a pending draft, leaving the live article untouched', async () => {
+    const created = await createPost(publishedPayload());
+    const id = created.body.post.id;
+    await saveDraft(id, postPayload({ title: 'Verworfen' }));
+
+    const discard = await discardDraft(id);
+    expect(discard.status).toBe(200);
+    expect(discard.body.post.title).toBe('Berge');
+    expect(discard.body.post.draft).toBeUndefined();
+
+    const admin = await auth.agent.get(`/api/posts/${id}`);
+    expect(admin.body.post.draft).toBeUndefined();
+  });
+
+  it('autosaves a never-published draft straight to the main document', async () => {
+    const created = await createPost(postPayload());
+    const id = created.body.post.id;
+
+    const ack = await saveDraft(
+      id,
+      postPayload({ title: 'Im Entstehen', blocks: [{ type: 'paragraph', text: 'wip' }] }),
+    );
+    expect(ack.status).toBe(200);
+    expect(ack.body.hasPendingDraft).toBe(false);
+
+    const admin = await auth.agent.get(`/api/posts/${id}`);
+    expect(admin.body.post.title).toBe('Im Entstehen'); // applied to the main doc
+    expect(admin.body.post.draft).toBeUndefined(); // no separate draft snapshot
+    expect(admin.body.post.status).toBe('draft');
+  });
+
+  it('publishes a draft post directly when there is no pending draft snapshot', async () => {
+    const created = await createPost(postPayload());
+    const id = created.body.post.id;
+    const pub = await publishPost(id);
+    expect(pub.status).toBe(200);
+    expect(pub.body.post.status).toBe('published');
+    expect(pub.body.post.publishedAt).toBeTruthy();
+  });
+
+  it('stores a draft trip change as a shortId and resolves it on publish', async () => {
+    const trip = await createTrip('Alpen');
+    const created = await createPost(publishedPayload());
+    const id = created.body.post.id;
+
+    await saveDraft(id, postPayload({ tripId: trip.body.trip.id }));
+    const admin = await auth.agent.get(`/api/posts/${id}`);
+    expect(admin.body.post.draft.tripId).toBe(trip.body.trip.id);
+
+    const pub = await publishPost(id);
+    expect(pub.body.post.tripId).toBe(trip.body.trip.id);
+  });
+
+  it('rejects a draft referencing an unknown trip (400)', async () => {
+    const created = await createPost(publishedPayload());
+    const res = await saveDraft(created.body.post.id, postPayload({ tripId: 'nope12' }));
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a draft save with an invalid payload (400, names the fields)', async () => {
+    const created = await createPost(publishedPayload());
+    const res = await saveDraft(created.body.post.id, postPayload({ country: '', placeName: '' }));
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain('country');
+    expect(res.body.message).toContain('placeName');
+  });
+
+  it('404s a draft save / publish / discard for an unknown post', async () => {
+    expect((await saveDraft('zzzzzz', postPayload())).status).toBe(404);
+    expect((await publishPost('zzzzzz')).status).toBe(404);
+    expect((await discardDraft('zzzzzz')).status).toBe(404);
+  });
+
+  it('requires the CSRF header to save a draft (403)', async () => {
+    const created = await createPost(postPayload());
+    const res = await auth.agent.put(`/api/posts/${created.body.post.id}/draft`).send(postPayload());
+    expect(res.status).toBe(403);
   });
 
   it('deletes a post', async () => {

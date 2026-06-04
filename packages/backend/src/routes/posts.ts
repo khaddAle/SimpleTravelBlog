@@ -168,6 +168,116 @@ export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): voi
     },
   );
 
+  // Autosave. A published post protects its live article by stashing the edit in
+  // a `draft` subdoc (saved with timestamps:false so `updatedAt` — which readers
+  // and the sitemap rely on — is not bumped). A never-published draft has no live
+  // version to protect, so the edit applies straight to the main document.
+  app.put<{ Params: { shortId: string } }>('/api/posts/:shortId/draft', mutate, async (req) => {
+    const parsed = createPostRequestSchema.safeParse(req.body);
+    if (!parsed.success) throw app.httpErrors.badRequest(invalidPayloadMessage(parsed.error));
+    const data = parsed.data;
+
+    const post = await Post.findOne({ shortId: req.params.shortId });
+    if (!post) throw app.httpErrors.notFound('post not found');
+
+    // The draft stores the trip by shortId, but validate it resolves now so a
+    // dangling reference can't slip in and only fail later at publish time.
+    if (data.tripId) {
+      const resolved = await tripObjectIdForShortId(data.tripId);
+      if (!resolved) throw app.httpErrors.badRequest('unknown tripId');
+    }
+
+    const savedAt = new Date();
+    if (post.status === 'published') {
+      post.set('draft', {
+        title: data.title,
+        ...(data.subtitle !== undefined ? { subtitle: data.subtitle } : {}),
+        blocks: data.blocks,
+        postDate: new Date(data.postDate),
+        country: data.country,
+        placeName: data.placeName,
+        lat: data.lat,
+        lng: data.lng,
+        ...(data.tripId ? { tripId: data.tripId } : {}),
+        ...(data.coverImageId ? { coverImageId: data.coverImageId } : {}),
+        savedAt,
+      });
+      await post.save({ timestamps: false });
+      return { savedAt: savedAt.toISOString(), hasPendingDraft: true };
+    }
+
+    let tripObjectId: string | undefined;
+    if (data.tripId) tripObjectId = (await tripObjectIdForShortId(data.tripId)) ?? undefined;
+    post.title = data.title;
+    post.subtitle = data.subtitle ?? null;
+    post.blocks = data.blocks;
+    post.postDate = new Date(data.postDate);
+    post.country = data.country;
+    post.placeName = data.placeName;
+    post.lat = data.lat;
+    post.lng = data.lng;
+    post.tripId = tripObjectId ? new Types.ObjectId(tripObjectId) : null;
+    post.coverImageId = data.coverImageId || null;
+    await post.save();
+    return { savedAt: post.updatedAt.toISOString(), hasPendingDraft: false };
+  });
+
+  // Promote a pending draft to the live article (or publish a draft post as-is).
+  app.post<{ Params: { shortId: string } }>('/api/posts/:shortId/publish', mutate, async (req) => {
+    const post = await Post.findOne({ shortId: req.params.shortId });
+    if (!post) throw app.httpErrors.notFound('post not found');
+
+    let tripShortId: string | undefined;
+    if (post.draft) {
+      const d = post.draft;
+      post.title = d.title;
+      post.subtitle = d.subtitle ?? null;
+      post.blocks = d.blocks;
+      post.postDate = d.postDate;
+      post.country = d.country;
+      post.placeName = d.placeName;
+      post.lat = d.lat;
+      post.lng = d.lng;
+      post.coverImageId = d.coverImageId ?? null;
+      if (d.tripId) {
+        const resolved = await tripObjectIdForShortId(d.tripId);
+        if (!resolved) throw app.httpErrors.badRequest('unknown tripId');
+        post.tripId = new Types.ObjectId(resolved);
+        tripShortId = d.tripId;
+      } else {
+        post.tripId = null;
+      }
+      post.set('draft', undefined);
+    } else if (post.tripId) {
+      const tripMap = await tripShortIdsByObjectId([String(post.tripId)]);
+      tripShortId = tripMap.get(String(post.tripId));
+    }
+
+    post.status = 'published';
+    await post.save();
+    return { post: toPostDto(post.toObject(), tripShortId) };
+  });
+
+  // Drop a pending draft, reverting the editor to the live article. The live
+  // content is untouched, so this also saves with timestamps:false.
+  app.post<{ Params: { shortId: string } }>(
+    '/api/posts/:shortId/discard-draft',
+    mutate,
+    async (req) => {
+      const post = await Post.findOne({ shortId: req.params.shortId });
+      if (!post) throw app.httpErrors.notFound('post not found');
+
+      let tripShortId: string | undefined;
+      if (post.tripId) {
+        const tripMap = await tripShortIdsByObjectId([String(post.tripId)]);
+        tripShortId = tripMap.get(String(post.tripId));
+      }
+      post.set('draft', undefined);
+      await post.save({ timestamps: false });
+      return { post: toPostDto(post.toObject(), tripShortId) };
+    },
+  );
+
   app.delete<{ Params: { shortId: string } }>(
     '/api/posts/:shortId',
     mutate,

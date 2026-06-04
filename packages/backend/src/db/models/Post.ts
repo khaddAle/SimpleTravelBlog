@@ -3,6 +3,29 @@ import { blockArraySchema, type Block } from '@stb/shared';
 import { blocksToSearchText } from '../../blocks/plaintext.js';
 import { foldSearch } from '../../posts/fold.js';
 
+// Draft snapshot of the editable payload. A published post carries one of these
+// while it has unpublished autosaved edits; "Veröffentlichen" promotes it to the
+// top-level fields and clears it. Typed (not Mixed) so it serializes predictably;
+// `tripId` is the trip's public shortId (the editor's reference), resolved to an
+// ObjectId only when the draft is promoted. `draft.blocks` is validated at the
+// route (the top-level pre-validate hook only covers `this.blocks`).
+const draftSchema = new Schema(
+  {
+    title: { type: String, required: true },
+    subtitle: { type: String },
+    blocks: { type: [Schema.Types.Mixed], default: [] },
+    postDate: { type: Date, required: true },
+    country: { type: String, required: true },
+    placeName: { type: String, required: true },
+    lat: { type: Number, required: true },
+    lng: { type: Number, required: true },
+    tripId: { type: String },
+    coverImageId: { type: String },
+    savedAt: { type: Date, required: true },
+  },
+  { _id: false },
+);
+
 const postSchema = new Schema(
   {
     shortId: { type: String, required: true, unique: true },
@@ -21,6 +44,8 @@ const postSchema = new Schema(
     status: { type: String, enum: ['draft', 'published'], required: true, default: 'draft' },
     authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     publishedAt: { type: Date },
+    // Absent unless a published post has unpublished autosaved edits.
+    draft: { type: draftSchema, default: undefined },
     // Denormalized search fields, both rebuilt on every save: `searchText` is
     // the human-readable concatenation; `searchFold` is its folded form (see
     // posts/fold.ts) that the public search matches as a case-/accent-

@@ -239,6 +239,48 @@ describe('images integration', () => {
     expect(blocked.body.error).toBe('image_in_use');
   });
 
+  it('treats an image used only in a pending draft as in-use (protected from cleanup)', async () => {
+    const img = await uploadImage('draft-only.jpg');
+    // A published post that does NOT reference the image in its live content...
+    const post = await auth.agent
+      .post('/api/posts')
+      .set('x-csrf-token', auth.csrf)
+      .send({
+        title: 'Live ohne Bild',
+        postDate: '2026-05-01T00:00:00.000Z',
+        country: 'DE',
+        placeName: 'Ort',
+        lat: 47,
+        lng: 10,
+        status: 'published',
+        publishedAt: '2020-01-01T00:00:00.000Z',
+        blocks: [{ type: 'paragraph', text: 'noch kein Bild' }],
+      });
+    // ...but whose autosaved draft adds it. The image must not become an orphan.
+    await auth.agent
+      .put(`/api/posts/${post.body.post.id}/draft`)
+      .set('x-csrf-token', auth.csrf)
+      .send({
+        title: 'Live ohne Bild',
+        postDate: '2026-05-01T00:00:00.000Z',
+        country: 'DE',
+        placeName: 'Ort',
+        lat: 47,
+        lng: 10,
+        blocks: [{ type: 'image', imageId: img }],
+      });
+
+    const orphans = await auth.agent.get('/api/images?orphansOnly=true');
+    expect(orphans.body.images.map((i: { id: string }) => i.id)).not.toContain(img);
+
+    const usage = await auth.agent.get(`/api/images/${img}/usage`);
+    expect(usage.body.posts.map((p: { title: string }) => p.title)).toEqual(['Live ohne Bild']);
+
+    const blocked = await auth.agent.delete(`/api/images/${img}`).set('x-csrf-token', auth.csrf);
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error).toBe('image_in_use');
+  });
+
   it('treats a settings background image as in-use: non-orphan and undeletable', async () => {
     const bg = await uploadImage('bg.jpg');
     // Branding (incl. background images) is admin-only now.

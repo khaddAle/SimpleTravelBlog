@@ -20,11 +20,22 @@ export function collectImageIds(blocks: Block[]): string[] {
  */
 export async function imageIdsInUse(excludePostId?: string): Promise<Set<string>> {
   const postFilter = excludePostId ? { shortId: { $ne: excludePostId } } : {};
-  const posts = await Post.find(postFilter, { blocks: 1, coverImageId: 1 }).lean();
+  const posts = await Post.find(postFilter, {
+    blocks: 1,
+    coverImageId: 1,
+    // A published post's unpublished draft can reference images that aren't in
+    // the live content yet; they must stay protected from the orphan cleanup.
+    'draft.blocks': 1,
+    'draft.coverImageId': 1,
+  }).lean();
   const used = new Set<string>();
   for (const post of posts) {
     for (const id of collectImageIds((post.blocks ?? []) as Block[])) used.add(id);
     if (post.coverImageId) used.add(post.coverImageId);
+    if (post.draft) {
+      for (const id of collectImageIds((post.draft.blocks ?? []) as Block[])) used.add(id);
+      if (post.draft.coverImageId) used.add(post.draft.coverImageId);
+    }
   }
   // Blog background images (settings singleton) also pin their images.
   const settings = await Settings.findById(SETTINGS_ID, { backgroundImageIds: 1 }).lean();
@@ -50,6 +61,10 @@ export async function postsReferencingImage(imageId: string): Promise<PostRef[]>
         { blocks: { $elemMatch: { type: 'image', imageId } } },
         { blocks: { $elemMatch: { type: 'gallery', imageIds: imageId } } },
         { coverImageId: imageId },
+        // A pending draft pins its images too (see imageIdsInUse).
+        { 'draft.blocks': { $elemMatch: { type: 'image', imageId } } },
+        { 'draft.blocks': { $elemMatch: { type: 'gallery', imageIds: imageId } } },
+        { 'draft.coverImageId': imageId },
       ],
     },
     { shortId: 1, title: 1 },

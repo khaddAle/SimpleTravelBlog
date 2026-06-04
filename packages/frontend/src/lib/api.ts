@@ -2,6 +2,7 @@ import type {
   PostDto,
   PublicPostHead,
   PostSummary,
+  DraftAck,
   TripDto,
   ImageDto,
   UserDto,
@@ -209,6 +210,29 @@ export const api = {
       await request<{ post: PostDto }>(`/api/posts/${id}`, {
         method: 'PATCH',
         body: data,
+        csrf: true,
+      })
+    ).post;
+  },
+  /** Autosave the editable payload as a draft; returns a light ack (no body). */
+  async savePostDraft(id: string, data: CreatePostRequest): Promise<DraftAck> {
+    return await request<DraftAck>(`/api/posts/${id}/draft`, {
+      method: 'PUT',
+      body: data,
+      csrf: true,
+    });
+  },
+  /** Promote a pending draft (or publish a draft post) → returns the live post. */
+  async publishPost(id: string): Promise<PostDto> {
+    return (
+      await request<{ post: PostDto }>(`/api/posts/${id}/publish`, { method: 'POST', csrf: true })
+    ).post;
+  },
+  /** Drop a pending draft → returns the (unchanged) live post. */
+  async discardDraft(id: string): Promise<PostDto> {
+    return (
+      await request<{ post: PostDto }>(`/api/posts/${id}/discard-draft`, {
+        method: 'POST',
         csrf: true,
       })
     ).post;

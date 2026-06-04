@@ -85,6 +85,38 @@ describe('mutations send csrf, reads do not', () => {
     expect(init.headers['x-csrf-token']).toBe('tok-123');
   });
 
+  it('savePostDraft PUTs with csrf and returns the ack', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ savedAt: '2026-01-01T00:00:00.000Z', hasPendingDraft: true }),
+    );
+    const ack = await api.savePostDraft('p1', {
+      title: 'T',
+      postDate: '2026-01-01T00:00:00.000Z',
+      country: 'DE',
+      placeName: 'Berlin',
+      lat: 1,
+      lng: 2,
+      blocks: [],
+    });
+    expect(ack).toEqual({ savedAt: '2026-01-01T00:00:00.000Z', hasPendingDraft: true });
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('/api/posts/p1/draft');
+    expect(init.method).toBe('PUT');
+    expect(init.headers['x-csrf-token']).toBe('tok-123');
+  });
+
+  it('publishPost / discardDraft POST with csrf and return the post', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ post: { id: 'p1', title: 'Live' } }));
+    expect((await api.publishPost('p1')).title).toBe('Live');
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/posts/p1/publish');
+    expect(fetchMock.mock.calls[0]![1].method).toBe('POST');
+    expect(fetchMock.mock.calls[0]![1].headers['x-csrf-token']).toBe('tok-123');
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ post: { id: 'p1', title: 'Original' } }));
+    expect((await api.discardDraft('p1')).title).toBe('Original');
+    expect(fetchMock.mock.calls[1]![0]).toBe('/api/posts/p1/discard-draft');
+  });
+
   it('listPosts is a plain GET without csrf and returns posts + total', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ posts: [{ id: 'p1' }], total: 1 }));
     const { posts, total } = await api.listPosts();

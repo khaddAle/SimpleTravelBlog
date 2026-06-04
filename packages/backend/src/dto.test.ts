@@ -68,6 +68,64 @@ describe('toPostDto', () => {
     );
     expect(toPostDto(basePost).coverImageId).toBeUndefined();
   });
+
+  it('omits draft when the post has none', () => {
+    expect(toPostDto(basePost).draft).toBeUndefined();
+  });
+
+  it('maps an attached draft snapshot, ISO-stringifying its dates', () => {
+    const dto = toPostDto({
+      ...basePost,
+      status: 'published',
+      publishedAt: new Date('2026-05-04T00:00:00.000Z'),
+      draft: {
+        title: 'Überarbeitet',
+        subtitle: 'neu',
+        blocks: [{ type: 'paragraph', text: 'entwurf' }],
+        postDate: new Date('2026-05-06T00:00:00.000Z'),
+        country: 'IT',
+        placeName: 'Rom',
+        lat: 41.9,
+        lng: 12.5,
+        tripId: 'trip01',
+        coverImageId: 'covX',
+        savedAt: new Date('2026-05-07T08:30:00.000Z'),
+      },
+    });
+    expect(dto.draft).toEqual({
+      title: 'Überarbeitet',
+      subtitle: 'neu',
+      blocks: [{ type: 'paragraph', text: 'entwurf' }],
+      postDate: '2026-05-06T00:00:00.000Z',
+      country: 'IT',
+      placeName: 'Rom',
+      lat: 41.9,
+      lng: 12.5,
+      tripId: 'trip01',
+      coverImageId: 'covX',
+      savedAt: '2026-05-07T08:30:00.000Z',
+    });
+  });
+
+  it('omits optional draft fields that are absent', () => {
+    const dto = toPostDto({
+      ...basePost,
+      status: 'published',
+      draft: {
+        title: 'Nur Pflicht',
+        blocks: [],
+        postDate: new Date('2026-05-06T00:00:00.000Z'),
+        country: 'DE',
+        placeName: 'Zugspitze',
+        lat: 47.42,
+        lng: 10.98,
+        savedAt: new Date('2026-05-07T08:30:00.000Z'),
+      },
+    });
+    expect(dto.draft?.subtitle).toBeUndefined();
+    expect(dto.draft?.tripId).toBeUndefined();
+    expect(dto.draft?.coverImageId).toBeUndefined();
+  });
 });
 
 describe('toPublicPostHead', () => {

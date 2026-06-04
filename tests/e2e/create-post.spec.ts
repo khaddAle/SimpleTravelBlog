@@ -32,7 +32,10 @@ test('an unpublished draft is hidden from the reader', async ({ page }) => {
   await gotoNewPost(page);
   await fillMetadata(page, { title });
   await addParagraph(page, 'Noch nicht fertig.');
-  await page.getByRole('button', { name: 'Entwurf speichern' }).click();
+  // No manual "save" button anymore — autosave persists the draft; wait for the
+  // confirmation, then return to the list via the nav (no unsaved-changes prompt).
+  await expect(page.getByText('Gespeichert')).toBeVisible();
+  await page.getByRole('link', { name: 'Beiträge' }).click();
   await expect(page).toHaveURL(/#\/admin$/);
 
   await expect(page.locator('.post-row').filter({ hasText: title })).toContainText('Entwurf');

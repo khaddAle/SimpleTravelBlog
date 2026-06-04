@@ -1,6 +1,7 @@
 import type {
   Block,
   PostDto,
+  PostDraft,
   PublicPostHead,
   PostSummary,
   TripDto,
@@ -16,6 +17,23 @@ import type {
  * are pure and unit-testable without a live database.
  */
 
+/** A stored draft snapshot (dates as Date) — the source shape for `toPostDraft`. */
+export interface PostDraftLike {
+  title: string;
+  subtitle?: string | null;
+  blocks: unknown;
+  postDate: Date;
+  country: string;
+  placeName: string;
+  lat: number;
+  lng: number;
+  // The draft stores the trip by its public shortId (the editor's reference),
+  // so no ObjectId→shortId resolution is needed on output.
+  tripId?: string | null;
+  coverImageId?: string | null;
+  savedAt: Date;
+}
+
 export interface PostLike {
   shortId: string;
   title: string;
@@ -29,8 +47,26 @@ export interface PostLike {
   coverImageId?: string | null;
   status: 'draft' | 'published';
   publishedAt?: Date | null;
+  draft?: PostDraftLike | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** Map a stored draft subdocument to its DTO (dates → ISO, empties omitted). */
+export function toPostDraft(d: PostDraftLike): PostDraft {
+  return {
+    title: d.title,
+    ...(d.subtitle ? { subtitle: d.subtitle } : {}),
+    blocks: (d.blocks ?? []) as Block[],
+    postDate: d.postDate.toISOString(),
+    country: d.country,
+    placeName: d.placeName,
+    lat: d.lat,
+    lng: d.lng,
+    ...(d.tripId ? { tripId: d.tripId } : {}),
+    ...(d.coverImageId ? { coverImageId: d.coverImageId } : {}),
+    savedAt: d.savedAt.toISOString(),
+  };
 }
 
 export function toPostDto(p: PostLike, tripShortId?: string): PostDto {
@@ -48,6 +84,7 @@ export function toPostDto(p: PostLike, tripShortId?: string): PostDto {
     ...(p.coverImageId ? { coverImageId: p.coverImageId } : {}),
     status: p.status,
     ...(p.publishedAt ? { publishedAt: p.publishedAt.toISOString() } : {}),
+    ...(p.draft ? { draft: toPostDraft(p.draft) } : {}),
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
   };

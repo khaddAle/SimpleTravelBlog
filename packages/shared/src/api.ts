@@ -89,6 +89,19 @@ export const updatePostRequestSchema = createPostRequestSchema.partial().extend(
 });
 export type UpdatePostRequest = z.infer<typeof updatePostRequestSchema>;
 
+/**
+ * A draft snapshot: the editable post payload plus a save timestamp. A published
+ * post carries one of these (in `PostDto.draft`) while it has unpublished edits —
+ * autosave writes here so readers keep seeing the live article until the editor
+ * promotes the draft via "Veröffentlichen".
+ */
+export const postDraftSchema = postMetadataSchema.extend({
+  blocks: blockArraySchema,
+  coverImageId: z.string().optional(),
+  savedAt: z.string(),
+});
+export type PostDraft = z.infer<typeof postDraftSchema>;
+
 /** Post as returned to clients. Ids are opaque shortIds, dates ISO strings. */
 export const postDtoSchema = z.object({
   id: z.string(),
@@ -106,8 +119,20 @@ export const postDtoSchema = z.object({
   publishedAt: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  // Present only on a published post that has unpublished autosaved edits. The
+  // editor seeds from it to continue the in-progress draft; readers never see it
+  // (the public DTO mapper never projects `draft`). Its presence is the
+  // authoritative `hasPendingDraft` signal for the editor.
+  draft: postDraftSchema.optional(),
 });
 export type PostDto = z.infer<typeof postDtoSchema>;
+
+/** Light acknowledgement returned by the autosave (draft) endpoint. */
+export const draftAckSchema = z.object({
+  savedAt: z.string(),
+  hasPendingDraft: z.boolean(),
+});
+export type DraftAck = z.infer<typeof draftAckSchema>;
 
 /**
  * Lightweight public post projection for list views (archive, landing, next-post
