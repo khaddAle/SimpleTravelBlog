@@ -2,12 +2,13 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { uploadAcceptedSchema } from '@stb/shared';
+import { uploadAcceptedSchema, blockArraySchema, type Block } from '@stb/shared';
 import {
   parseWpPosts,
   parseWpMedia,
   planImport,
   finalizeBlocks,
+  collectImageSrcs,
   renderReport,
   type ImportPlan,
   type MapOptions,
@@ -16,6 +17,7 @@ import { drainSseEvents } from './sse.js';
 import { withRetry } from './retry.js';
 import { createProgressTracker } from './progress.js';
 import { manifestFilename, parseManifest, type Manifest } from './manifest.js';
+import { matchLiveHead, planRepair, type LiveHead } from './repair.js';
 
 /** Build an onRetry handler that logs each transient failure + backoff to stdout. */
 const warnRetry =
@@ -46,6 +48,10 @@ const warnRetry =
  * image (so you can raise the server's MAX_UPLOAD_BYTES before a live run);
  * `--gallery-min=N` (default 3, floored at 2) sets how many consecutive
  * caption-less images collapse into a single gallery block.
+ *
+ * Repair mode (`--repair`) does not create posts; it retro-fixes the image-loss
+ * bug on an already-imported blog — see {@link runRepair}. `--post=<slug>` limits
+ * it to one post (the canary), `--dry-run` previews without uploading or writing.
  *
  * Resumability: a live run records each uploaded `source_url → imageId` to a
  * dedup manifest beside the report (host-namespaced, e.g.
@@ -78,6 +84,14 @@ interface Args {
   manifestPath: string | undefined;
   /** Ignore (and overwrite) any existing manifest — force a clean re-upload. */
   resetManifest: boolean;
+  /**
+   * Image-recovery repair mode (Part C). Instead of creating posts, match each
+   * corpus post to its existing live post and non-destructively add back the
+   * images the buggy import dropped (see {@link file://./repair.ts}).
+   */
+  repair: boolean;
+  /** Restrict a repair run to a single WP slug (the canary). */
+  post: string | undefined;
   map: MapOptions;
 }
 
@@ -148,6 +162,8 @@ function parseArgs(argv: string[]): Args {
     throttleMs: throttle !== undefined && Number.isFinite(throttle) ? Math.max(0, throttle) : 50,
     manifestPath,
     resetManifest: bare.has('reset-manifest'),
+    repair: bare.has('repair'),
+    post: flags.get('post'),
     map,
   };
 }
@@ -361,6 +377,268 @@ async function loadManifest(file: string): Promise<Manifest> {
   }
 }
 
+// --- image-recovery repair (Part C) ----------------------------------------
+
+const headsResponseSchema = z.object({
+  posts: z.array(z.object({ id: z.string(), title: z.string(), postDate: z.string() })),
+});
+
+/** All published post heads (id/title/postDate) — the corpus→live match table. */
+async function fetchHeads(apiUrl: string): Promise<LiveHead[]> {
+  const res = await withRetry(() => fetch(`${apiUrl}/api/public/posts/heads?limit=1000`), {
+    onRetry: warnRetry('Heads laden'),
+  });
+  if (!res.ok) throw new Error(`heads fetch failed: ${res.status}`);
+  return headsResponseSchema.parse(await res.json()).posts;
+}
+
+const livePostSchema = z.object({
+  post: z.object({ blocks: blockArraySchema, draft: z.unknown().optional() }),
+});
+
+/** Fetch a live post's current blocks + whether it carries an unpublished draft. */
+async function fetchLiveBlocks(
+  apiUrl: string,
+  session: Session,
+  shortId: string,
+): Promise<{ blocks: Block[]; hasPendingDraft: boolean }> {
+  const res = await withRetry(
+    () => fetch(`${apiUrl}/api/posts/${shortId}`, { headers: { cookie: session.cookie } }),
+    { onRetry: warnRetry(`Beitrag ${shortId} laden`) },
+  );
+  if (!res.ok) throw new Error(`live post fetch failed: ${shortId} (${res.status})`);
+  const parsed = livePostSchema.parse(await res.json());
+  return { blocks: parsed.post.blocks, hasPendingDraft: parsed.post.draft != null };
+}
+
+/** PATCH only the post's blocks, leaving every other field (location, cover,
+ *  status, dates, trip) untouched — the whole point of the careful merge. */
+async function patchBlocks(
+  apiUrl: string,
+  session: Session,
+  shortId: string,
+  blocks: Block[],
+): Promise<void> {
+  const res = await withRetry(
+    () =>
+      fetch(`${apiUrl}/api/posts/${shortId}`, {
+        method: 'PATCH',
+        headers: {
+          cookie: session.cookie,
+          'x-csrf-token': session.csrf,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ blocks }),
+      }),
+    { onRetry: warnRetry(`Beitrag ${shortId} aktualisieren`) },
+  );
+  if (res.status !== 200) throw new Error(`patch failed: ${shortId} (${res.status})`);
+}
+
+/** Count image references (standalone images + every gallery member). */
+function countImageRefs(blocks: Block[]): number {
+  let n = 0;
+  for (const b of blocks) {
+    if (b.type === 'image') n += 1;
+    else if (b.type === 'gallery') n += b.imageIds.length;
+  }
+  return n;
+}
+
+type RepairStatus = 'noop' | 'apply' | 'diverged' | 'unmatched' | 'ambiguous' | 'error';
+
+interface RepairPostResult {
+  slug: string;
+  title: string;
+  match: 'matched' | 'unmatched' | 'ambiguous';
+  shortId?: string;
+  status: RepairStatus;
+  reason?: string;
+  liveImages?: number;
+  correctedImages?: number;
+  added?: number;
+  /** Distinct image sources not yet in the manifest before this post ran. */
+  toUpload?: number;
+  /** Images actually uploaded for this post this run (0 in dry-run). */
+  uploaded?: number;
+  patched?: boolean;
+  /** Image-ref count re-read after the PATCH (must equal correctedImages). */
+  verifiedImages?: number;
+  /** Live blocks captured immediately before the PATCH, for rollback. */
+  rollbackBlocks?: Block[];
+}
+
+interface RepairRunReport {
+  dryRun: boolean;
+  targets: number;
+  summary: Record<RepairStatus, number>;
+  totalUploaded: number;
+  totalAdded: number;
+  posts: RepairPostResult[];
+}
+
+/**
+ * Non-destructively repair the image-loss bug across the live blog. For each
+ * targeted corpus post: match it to its live post by title, re-map it with the
+ * fixed parser, resolve images (manifest dedup + upload the bytes the original
+ * import never pushed), and — only when {@link planRepair} is confident the post
+ * was not hand-edited — PATCH back just the `blocks`, restoring the lost images
+ * in reading order. Divergent or unmatched posts are reported and skipped.
+ *
+ *   npm run import-wp -- --repair --source-dir=./corpus --api-url=… \
+ *     --username=… --password=… --dry-run
+ *   …same without --dry-run, --post=und-nun-die-tagesthemen   # live canary
+ */
+async function runRepair(args: Args, plan: ImportPlan): Promise<RepairRunReport> {
+  if (!args.username || !args.password) throw new Error('repair needs --username and --password');
+  const session = await login(args.apiUrl, args.username, args.password);
+  const heads = await fetchHeads(args.apiUrl);
+
+  const manifest: Manifest =
+    args.manifestPath && !args.resetManifest ? await loadManifest(args.manifestPath) : {};
+  let sinceFlush = 0;
+  const persistManifest = async (): Promise<void> => {
+    if (!args.manifestPath) return;
+    await mkdir(path.dirname(path.resolve(args.manifestPath)), { recursive: true });
+    await writeFile(args.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  };
+
+  // Only posts that reference at least one content image can have lost any.
+  let targets = plan.mapped.filter((m) => collectImageSrcs(m.request.blocks).length > 0);
+  if (args.post) targets = targets.filter((m) => m.slug === args.post);
+  if (args.limit !== undefined) targets = targets.slice(0, Math.max(0, args.limit));
+
+  const posts: RepairPostResult[] = [];
+  let totalUploaded = 0;
+  let throttleGate = false; // pace uploads only after the first network upload
+  process.stdout.write(`\nReparatur (${args.dryRun ? 'Vorschau' : 'live'}): ${targets.length} Beitrag/Beiträge\n`);
+
+  for (const m of targets) {
+    const r: RepairPostResult = {
+      slug: m.slug,
+      title: m.request.title,
+      match: 'unmatched',
+      status: 'unmatched',
+    };
+    try {
+      const match = matchLiveHead(heads, { title: m.request.title, postDate: m.request.postDate });
+      r.match = match.status;
+      if (match.status !== 'matched' || !match.shortId) {
+        r.status = match.status === 'ambiguous' ? 'ambiguous' : 'unmatched';
+        r.reason =
+          match.status === 'ambiguous'
+            ? `mehrdeutiger Titel — Kandidaten: ${match.candidates?.join(', ')}`
+            : 'kein Live-Beitrag mit diesem Titel gefunden';
+        posts.push(r);
+        process.stdout.write(`  ? ${m.slug}: ${r.status}\n`);
+        continue;
+      }
+      const shortId = match.shortId;
+      r.shortId = shortId;
+
+      const live = await fetchLiveBlocks(args.apiUrl, session, shortId);
+      r.liveImages = countImageRefs(live.blocks);
+
+      // An unpublished draft means the editor is mid-edit; never clobber it.
+      if (live.hasPendingDraft) {
+        r.status = 'diverged';
+        r.reason = 'Beitrag hat einen offenen Entwurf (laufende Bearbeitung) — übersprungen';
+        posts.push(r);
+        process.stdout.write(`  ~ ${m.slug}: diverged (offener Entwurf)\n`);
+        continue;
+      }
+
+      // Cheap pre-check: resolve with the manifest only (no uploads) and let the
+      // text/orphan guards rule out edited posts before we upload any bytes.
+      const manifestOnly = (src: string): string | undefined => manifest[src];
+      const pre = planRepair(live.blocks, finalizeBlocks(m.request.blocks, manifestOnly).blocks);
+      if (pre.status === 'diverged') {
+        r.status = 'diverged';
+        if (pre.reason) r.reason = pre.reason;
+        posts.push(r);
+        process.stdout.write(`  ~ ${m.slug}: diverged (${pre.reason})\n`);
+        continue;
+      }
+
+      // Upload the bytes the original import dropped (skip in dry-run).
+      const srcs = collectImageSrcs(m.request.blocks);
+      const missing = srcs.filter((s) => !manifest[s]);
+      r.toUpload = missing.length;
+      let uploaded = 0;
+      if (!args.dryRun) {
+        for (const src of missing) {
+          if (throttleGate) await sleep(args.throttleMs);
+          throttleGate = true;
+          try {
+            manifest[src] = await uploadImage(args.apiUrl, session, src);
+            uploaded += 1;
+            if (++sinceFlush >= 25) {
+              await persistManifest();
+              sinceFlush = 0;
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            process.stdout.write(`    ⚠ Bild übersprungen: ${src} — ${msg}\n`);
+          }
+        }
+      }
+      r.uploaded = uploaded;
+      totalUploaded += uploaded;
+
+      // Build the corrected blocks. In dry-run, stand in a placeholder id for any
+      // still-missing source so the plan reports the true added-image count.
+      const resolve = args.dryRun
+        ? (src: string): string | undefined => manifest[src] ?? `NEW:${src}`
+        : (src: string): string | undefined => manifest[src];
+      const corrected = finalizeBlocks(m.request.blocks, resolve).blocks;
+      const repairPlan = planRepair(live.blocks, corrected);
+      r.status = repairPlan.status;
+      if (repairPlan.reason) r.reason = repairPlan.reason;
+      r.correctedImages = countImageRefs(corrected);
+      r.added = repairPlan.addedImageIds.length;
+
+      if (repairPlan.status === 'apply' && !args.dryRun) {
+        r.rollbackBlocks = live.blocks;
+        await patchBlocks(args.apiUrl, session, shortId, repairPlan.mergedBlocks);
+        r.patched = true;
+        const after = await fetchLiveBlocks(args.apiUrl, session, shortId);
+        r.verifiedImages = countImageRefs(after.blocks);
+        const ok = r.verifiedImages === r.correctedImages;
+        process.stdout.write(
+          `  ${ok ? '+' : '!'} ${m.slug} → ${shortId}: ${r.liveImages}→${r.verifiedImages} Bilder` +
+            `${ok ? '' : ` (erwartet ${r.correctedImages})`}\n`,
+        );
+      } else {
+        const tag = args.dryRun && repairPlan.status === 'apply' ? `würde +${r.added} Bilder` : repairPlan.status;
+        process.stdout.write(`  · ${m.slug} → ${shortId}: ${tag}\n`);
+      }
+    } catch (err) {
+      r.status = 'error';
+      r.reason = err instanceof Error ? err.message : String(err);
+      process.stdout.write(`  ✗ ${m.slug}: Fehler — ${r.reason}\n`);
+    }
+    posts.push(r);
+  }
+  await persistManifest();
+
+  const summary: Record<RepairStatus, number> = {
+    noop: 0,
+    apply: 0,
+    diverged: 0,
+    unmatched: 0,
+    ambiguous: 0,
+    error: 0,
+  };
+  for (const p of posts) summary[p.status] += 1;
+  const totalAdded = posts.reduce((n, p) => n + (p.added ?? 0), 0);
+
+  process.stdout.write(
+    `\nReparatur-Zusammenfassung: ${JSON.stringify(summary)} — Bilder hochgeladen: ${totalUploaded}, hinzugefügt: ${totalAdded}\n`,
+  );
+
+  return { dryRun: args.dryRun, targets: targets.length, summary, totalUploaded, totalAdded, posts };
+}
+
 // --- orchestration ---------------------------------------------------------
 
 interface RunResult {
@@ -484,6 +762,19 @@ async function main(): Promise<void> {
 
   const posts = parseWpPosts(corpus.posts);
   const media = parseWpMedia(corpus.media);
+
+  // Repair mode maps the whole corpus (no --limit on the plan; --limit/--post
+  // narrow the repair targets instead) so title matching sees every post.
+  if (args.repair) {
+    const plan = planImport(posts, media, args.map);
+    const result = await runRepair(args, plan);
+    const repairOut = path.join(path.dirname(path.resolve(args.out)), 'repair-report.json');
+    await mkdir(path.dirname(repairOut), { recursive: true });
+    await writeFile(repairOut, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
+    process.stdout.write(`\nReparatur-Bericht geschrieben: ${repairOut}\n`);
+    return;
+  }
+
   const plan = planImport(posts, media, args.map, args.limit);
 
   process.stdout.write(`${renderReport(plan)}\n`);

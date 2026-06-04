@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Block } from '@stb/shared';
-import { planRepair } from './repair.js';
+import { planRepair, matchLiveHead, type LiveHead } from './repair.js';
 
 const para = (t: string): Block => ({ type: 'paragraph', text: t });
 const img = (id: string): Block => ({ type: 'image', imageId: id });
@@ -61,5 +61,53 @@ describe('planRepair', () => {
     const corrected = [para('p')];
     const plan = planRepair(live, corrected);
     expect(plan.status).toBe('diverged');
+  });
+});
+
+describe('matchLiveHead', () => {
+  const head = (id: string, title: string, postDate: string): LiveHead => ({ id, title, postDate });
+
+  it('matches a single live post with the same title', () => {
+    const heads = [
+      head('aaa111', 'Und nun die Tagesthemen', '2016-06-30T18:00:00.000Z'),
+      head('bbb222', 'Ein anderer Beitrag', '2016-07-01T18:00:00.000Z'),
+    ];
+    const r = matchLiveHead(heads, { title: 'Und nun die Tagesthemen', postDate: '2016-06-30T18:00:00.000Z' });
+    expect(r.status).toBe('matched');
+    expect(r.shortId).toBe('aaa111');
+  });
+
+  it('tolerates whitespace and case differences in the title', () => {
+    const heads = [head('aaa111', 'Und nun  die Tagesthemen', '2016-06-30T18:00:00.000Z')];
+    const r = matchLiveHead(heads, { title: '  und nun die tagesthemen  ', postDate: '2016-06-30T18:00:00.000Z' });
+    expect(r.status).toBe('matched');
+    expect(r.shortId).toBe('aaa111');
+  });
+
+  it('reports unmatched when no title matches', () => {
+    const heads = [head('aaa111', 'Etwas ganz anderes', '2016-06-30T18:00:00.000Z')];
+    const r = matchLiveHead(heads, { title: 'Und nun die Tagesthemen', postDate: '2016-06-30T18:00:00.000Z' });
+    expect(r.status).toBe('unmatched');
+    expect(r.shortId).toBeUndefined();
+  });
+
+  it('disambiguates duplicate titles by postDate', () => {
+    const heads = [
+      head('aaa111', 'Tag 1', '2016-06-30T18:00:00.000Z'),
+      head('bbb222', 'Tag 1', '2017-08-01T18:00:00.000Z'),
+    ];
+    const r = matchLiveHead(heads, { title: 'Tag 1', postDate: '2017-08-01T18:00:00.000Z' });
+    expect(r.status).toBe('matched');
+    expect(r.shortId).toBe('bbb222');
+  });
+
+  it('reports ambiguous when duplicate titles cannot be split by postDate', () => {
+    const heads = [
+      head('aaa111', 'Tag 1', '2016-06-30T18:00:00.000Z'),
+      head('bbb222', 'Tag 1', '2016-06-30T18:00:00.000Z'),
+    ];
+    const r = matchLiveHead(heads, { title: 'Tag 1', postDate: '2016-06-30T18:00:00.000Z' });
+    expect(r.status).toBe('ambiguous');
+    expect(r.candidates).toEqual(['aaa111', 'bbb222']);
   });
 });

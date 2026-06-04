@@ -79,6 +79,61 @@ function multisetMinus(a: string[], b: string[]): string[] {
   return out;
 }
 
+// --- matching a corpus post to its live counterpart ------------------------
+
+/**
+ * A live post head as returned by `GET /api/public/posts/heads` — the only
+ * fields the repair needs to identify which live post a corpus post became.
+ * (The new model has no slug, so we match on title; `id` is the public shortId.)
+ */
+export interface LiveHead {
+  id: string;
+  title: string;
+  postDate: string;
+}
+
+export type MatchStatus = 'matched' | 'unmatched' | 'ambiguous';
+
+export interface MatchResult {
+  status: MatchStatus;
+  /** The live shortId — present only when status === 'matched'. */
+  shortId?: string;
+  /** Candidate shortIds — present only when status === 'ambiguous'. */
+  candidates?: string[];
+}
+
+/** Title comparison key: trimmed, whitespace-collapsed, case-insensitive. The
+ *  import created the live title from the same `stripHtml(title)` the corpus
+ *  re-mapping produces, so an exact key match is expected; the normalisation
+ *  only guards against incidental spacing/case drift. */
+function titleKey(title: string): string {
+  return title.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * Find the live post a corpus post maps to. Match on the (normalised) title;
+ * if several live posts share a title, disambiguate by the exact `postDate`
+ * instant (both sides derive it from WP's `date_gmt`). Returns `unmatched` when
+ * no title matches and `ambiguous` when duplicates can't be split by date —
+ * either way the caller skips the post rather than guessing.
+ */
+export function matchLiveHead(
+  heads: LiveHead[],
+  target: { title: string; postDate: string },
+): MatchResult {
+  const wantedTitle = titleKey(target.title);
+  const byTitle = heads.filter((h) => titleKey(h.title) === wantedTitle);
+
+  if (byTitle.length === 0) return { status: 'unmatched' };
+  if (byTitle.length === 1) return { status: 'matched', shortId: byTitle[0]!.id };
+
+  const wantedMs = new Date(target.postDate).getTime();
+  const byDate = byTitle.filter((h) => new Date(h.postDate).getTime() === wantedMs);
+  if (byDate.length === 1) return { status: 'matched', shortId: byDate[0]!.id };
+
+  return { status: 'ambiguous', candidates: byTitle.map((h) => h.id) };
+}
+
 export function planRepair(live: Block[], corrected: Block[]): RepairPlan {
   if (textKey(live) !== textKey(corrected)) {
     return {
