@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { PostDto } from '@stb/shared';
+  import type { PostDto, PublicPostHead } from '@stb/shared';
   import { api, ApiError } from '../lib/api.js';
   import { formatDate } from '../lib/dates.js';
   import { countryName } from '../lib/countries.js';
@@ -12,7 +12,7 @@
 
   let post = $state<PostDto | null>(null);
   let status = $state<'loading' | 'ok' | 'notfound' | 'error'>('loading');
-  let nextPost = $state<PostDto | null>(null);
+  let nextPost = $state<PublicPostHead | null>(null);
 
   // The lead image is the post's first image block — it bleeds wide at r169.
   const leadIndex = $derived(post ? post.blocks.findIndex((b) => b.type === 'image') : -1);
@@ -27,9 +27,9 @@
     }
     // The "next post" link is a nicety — never let a list failure break the page.
     try {
-      const { items } = await api.publicPosts(1, 100);
-      const here = items.findIndex((p) => p.id === params.id);
-      if (here >= 0 && here + 1 < items.length) nextPost = items[here + 1] ?? null;
+      const heads = await api.publicPostHeads();
+      const here = heads.findIndex((p) => p.id === params.id);
+      if (here >= 0 && here + 1 < heads.length) nextPost = heads[here + 1] ?? null;
     } catch {
       // ignore — the article still renders without a neighbour link
     }

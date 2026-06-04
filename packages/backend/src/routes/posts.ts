@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { Types } from 'mongoose';
-import { ZodError } from 'zod';
+import { ZodError, z } from 'zod';
 import { createPostRequestSchema, updatePostRequestSchema } from '@stb/shared';
 import { Post } from '../db/models/Post.js';
 import { generateUniqueShortId } from '../lib/shortId.js';
-import { toPostDto } from '../dto.js';
+import { toPostDto, toPostSummary } from '../dto.js';
 import { tripObjectIdForShortId, tripShortIdsByObjectId } from '../posts/trips.js';
 import type { RouteContext } from './context.js';
 
@@ -22,6 +22,29 @@ function invalidPayloadMessage(error: ZodError): string {
   return `invalid post payload: ${fields.join(', ')}`;
 }
 
+// Admin list projection: the summary fields only — never `blocks`, so the
+// "Beiträge" page never pulls article content. The pending-draft flag (Stage 3)
+// is derived in toPostSummary from the projected `draft` field's presence.
+const SUMMARY_PROJECTION = {
+  shortId: 1,
+  title: 1,
+  subtitle: 1,
+  postDate: 1,
+  country: 1,
+  placeName: 1,
+  coverImageId: 1,
+  tripId: 1,
+  status: 1,
+  // Project only that a draft exists, not its (large) body — `1` returns the
+  // whole subdoc; in Stage 3 the editor never needs the draft body in the list.
+  'draft.savedAt': 1,
+} as const;
+
+const listPostsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
 export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): void {
   const { hooks } = ctx;
   const auth = { preHandler: hooks.requireAuth };
@@ -31,14 +54,23 @@ export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): voi
     return (await Post.exists({ shortId: id })) != null;
   }
 
-  app.get('/api/posts', auth, async () => {
-    const posts = await Post.find().sort({ postDate: -1 }).lean();
+  app.get('/api/posts', auth, async (req) => {
+    const { limit, offset } = listPostsQuerySchema.parse(req.query ?? {});
+    const [total, posts] = await Promise.all([
+      Post.countDocuments(),
+      (() => {
+        let query = Post.find({}, SUMMARY_PROJECTION).sort({ postDate: -1 }).skip(offset);
+        if (limit !== undefined) query = query.limit(limit);
+        return query.lean();
+      })(),
+    ]);
     const tripIds = posts.filter((p) => p.tripId).map((p) => String(p.tripId));
     const tripMap = await tripShortIdsByObjectId(tripIds);
     return {
       posts: posts.map((p) =>
-        toPostDto(p, p.tripId ? tripMap.get(String(p.tripId)) : undefined),
+        toPostSummary(p, p.tripId ? tripMap.get(String(p.tripId)) : undefined),
       ),
+      total,
     };
   });
 

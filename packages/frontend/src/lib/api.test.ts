@@ -85,10 +85,11 @@ describe('mutations send csrf, reads do not', () => {
     expect(init.headers['x-csrf-token']).toBe('tok-123');
   });
 
-  it('listPosts is a plain GET without csrf', async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ posts: [{ id: 'p1' }] }));
-    const posts = await api.listPosts();
+  it('listPosts is a plain GET without csrf and returns posts + total', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ posts: [{ id: 'p1' }], total: 1 }));
+    const { posts, total } = await api.listPosts();
     expect(posts).toHaveLength(1);
+    expect(total).toBe(1);
     const [, init] = fetchMock.mock.calls[0]!;
     expect(init.headers['x-csrf-token']).toBeUndefined();
   });

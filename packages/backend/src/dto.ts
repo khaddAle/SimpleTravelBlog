@@ -1,6 +1,8 @@
 import type {
   Block,
   PostDto,
+  PublicPostHead,
+  PostSummary,
   TripDto,
   ImageDto,
   ImageVariant,
@@ -48,6 +50,47 @@ export function toPostDto(p: PostLike, tripShortId?: string): PostDto {
     ...(p.publishedAt ? { publishedAt: p.publishedAt.toISOString() } : {}),
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
+  };
+}
+
+/** Subset of a post needed for the lightweight list projections (no blocks). */
+export interface PostHeadLike {
+  shortId: string;
+  title: string;
+  subtitle?: string | null;
+  postDate: Date;
+  country: string;
+  placeName: string;
+  coverImageId?: string | null;
+}
+
+/** Map a post to its public head — list views never carry block content. */
+export function toPublicPostHead(p: PostHeadLike, tripShortId?: string): PublicPostHead {
+  return {
+    id: p.shortId,
+    title: p.title,
+    ...(p.subtitle ? { subtitle: p.subtitle } : {}),
+    postDate: p.postDate.toISOString(),
+    country: p.country,
+    placeName: p.placeName,
+    ...(tripShortId ? { tripId: tripShortId } : {}),
+    ...(p.coverImageId ? { coverImageId: p.coverImageId } : {}),
+  };
+}
+
+/** A post with the editorial state the admin list needs on top of the head. */
+export interface PostSummaryLike extends PostHeadLike {
+  status: 'draft' | 'published';
+  // Present (non-null) once a published post carries an unpublished draft.
+  draft?: unknown;
+}
+
+/** Map a post to its admin summary (head + status + pending-draft flag). */
+export function toPostSummary(p: PostSummaryLike, tripShortId?: string): PostSummary {
+  return {
+    ...toPublicPostHead(p, tripShortId),
+    status: p.status,
+    hasPendingDraft: p.draft != null,
   };
 }
 

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   toPostDto,
+  toPublicPostHead,
+  toPostSummary,
   toImageDto,
   toTripDto,
   toUserListItem,
@@ -65,6 +67,44 @@ describe('toPostDto', () => {
       'cov123',
     );
     expect(toPostDto(basePost).coverImageId).toBeUndefined();
+  });
+});
+
+describe('toPublicPostHead', () => {
+  it('maps the head fields and never carries blocks', () => {
+    const head = toPublicPostHead(basePost);
+    expect(head).toEqual({
+      id: 'p1abcd',
+      title: 'Berge',
+      postDate: '2026-05-01T00:00:00.000Z',
+      country: 'DE',
+      placeName: 'Zugspitze',
+    });
+    expect('blocks' in head).toBe(false);
+  });
+
+  it('includes subtitle, trip shortId and coverImageId when present', () => {
+    const head = toPublicPostHead(
+      { ...basePost, subtitle: 'Untertitel', coverImageId: 'cov1' },
+      'trip01',
+    );
+    expect(head).toMatchObject({
+      subtitle: 'Untertitel',
+      coverImageId: 'cov1',
+      tripId: 'trip01',
+    });
+  });
+});
+
+describe('toPostSummary', () => {
+  it('adds status and hasPendingDraft (false without a draft)', () => {
+    const summary = toPostSummary(basePost);
+    expect(summary).toMatchObject({ id: 'p1abcd', status: 'draft', hasPendingDraft: false });
+    expect('blocks' in summary).toBe(false);
+  });
+
+  it('reports hasPendingDraft when a draft is attached', () => {
+    expect(toPostSummary({ ...basePost, draft: { savedAt: 'x' } }).hasPendingDraft).toBe(true);
   });
 });
 

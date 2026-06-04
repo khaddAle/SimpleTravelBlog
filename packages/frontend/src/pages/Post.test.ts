@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
-import type { PostDto } from '@stb/shared';
+import type { PostDto, PublicPostHead } from '@stb/shared';
 import { api, ApiError } from '../lib/api.js';
-import type { Paginated } from '../lib/api.js';
 import Post from './Post.svelte';
 
 const full: PostDto = {
@@ -33,19 +32,15 @@ const older: PostDto = {
   postDate: '2026-04-28T00:00:00.000Z',
 };
 
-const page = (items: PostDto[]): Paginated<PostDto> => ({
-  items,
-  page: 1,
-  pageSize: 100,
-  total: items.length,
-});
+// The next-post lookup uses lightweight heads; full posts are a structural superset.
+const heads = (...posts: PostDto[]): PublicPostHead[] => posts;
 
 afterEach(() => vi.restoreAllMocks());
 
 describe('Post', () => {
   it('renders the article head with eyebrow, title, subtitle and date', async () => {
     vi.spyOn(api, 'publicPost').mockResolvedValue(full);
-    vi.spyOn(api, 'publicPosts').mockResolvedValue(page([full, older]));
+    vi.spyOn(api, 'publicPostHeads').mockResolvedValue(heads(full, older));
     render(Post, { params: { id: 'p1' } });
 
     expect(
@@ -58,7 +53,7 @@ describe('Post', () => {
 
   it('renders the blocks, with the first image as a wide bleed lead', async () => {
     vi.spyOn(api, 'publicPost').mockResolvedValue(full);
-    vi.spyOn(api, 'publicPosts').mockResolvedValue(page([full]));
+    vi.spyOn(api, 'publicPostHeads').mockResolvedValue(heads(full));
     const { container } = render(Post, { params: { id: 'p1' } });
 
     await screen.findByRole('heading', { level: 1 });
@@ -72,7 +67,7 @@ describe('Post', () => {
 
   it('links to the next (older) post in the article navigation', async () => {
     vi.spyOn(api, 'publicPost').mockResolvedValue(full);
-    vi.spyOn(api, 'publicPosts').mockResolvedValue(page([full, older]));
+    vi.spyOn(api, 'publicPostHeads').mockResolvedValue(heads(full, older));
     render(Post, { params: { id: 'p1' } });
 
     const next = await screen.findByRole('link', { name: /Morgenlicht über Hallstatt/ });
@@ -81,7 +76,7 @@ describe('Post', () => {
 
   it('omits the next-post link when the post is the oldest', async () => {
     vi.spyOn(api, 'publicPost').mockResolvedValue(full);
-    vi.spyOn(api, 'publicPosts').mockResolvedValue(page([full]));
+    vi.spyOn(api, 'publicPostHeads').mockResolvedValue(heads(full));
     render(Post, { params: { id: 'p1' } });
 
     await screen.findByRole('heading', { level: 1 });
@@ -92,7 +87,7 @@ describe('Post', () => {
 
   it('still renders even if the post list (next link) cannot be loaded', async () => {
     vi.spyOn(api, 'publicPost').mockResolvedValue(full);
-    vi.spyOn(api, 'publicPosts').mockRejectedValue(new Error('boom'));
+    vi.spyOn(api, 'publicPostHeads').mockRejectedValue(new Error('boom'));
     render(Post, { params: { id: 'p1' } });
 
     expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
@@ -113,7 +108,7 @@ describe('Post', () => {
 
   it('renders the shared header and footer', () => {
     vi.spyOn(api, 'publicPost').mockResolvedValue(full);
-    vi.spyOn(api, 'publicPosts').mockResolvedValue(page([full]));
+    vi.spyOn(api, 'publicPostHeads').mockResolvedValue(heads(full));
     render(Post, { params: { id: 'p1' } });
     expect(screen.getByRole('link', { name: 'Karte' })).toHaveAttribute('href', '#/karte');
   });

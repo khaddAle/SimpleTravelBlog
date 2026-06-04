@@ -109,6 +109,32 @@ export const postDtoSchema = z.object({
 });
 export type PostDto = z.infer<typeof postDtoSchema>;
 
+/**
+ * Lightweight public post projection for list views (archive, landing, next-post
+ * lookup). Carries no `blocks`, so list endpoints never ship article bodies.
+ */
+export const publicPostHeadSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  subtitle: z.string().optional(),
+  postDate: z.string(),
+  country: isoCountrySchema,
+  placeName: z.string(),
+  coverImageId: z.string().optional(),
+  tripId: z.string().optional(),
+});
+export type PublicPostHead = z.infer<typeof publicPostHeadSchema>;
+
+/**
+ * Admin list projection: the public head fields plus the editorial state
+ * (`status`) and whether a published post carries an unpublished draft.
+ */
+export const postSummarySchema = publicPostHeadSchema.extend({
+  status: postStatusSchema,
+  hasPendingDraft: z.boolean(),
+});
+export type PostSummary = z.infer<typeof postSummarySchema>;
+
 // --- trips ---
 export const createTripRequestSchema = z.object({
   name: z.string().min(1).max(120),

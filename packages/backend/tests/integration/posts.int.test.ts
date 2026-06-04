@@ -70,6 +70,34 @@ describe('posts + trips integration', () => {
     expect(one.body.post.id).toBe(id);
   });
 
+  it('lists post summaries with a total and without blocks', async () => {
+    await createPost(postPayload({ title: 'Eins', postDate: '2026-01-01T00:00:00.000Z' }));
+    await createPost(postPayload({ title: 'Zwei', postDate: '2026-06-01T00:00:00.000Z' }));
+
+    const list = await auth.agent.get('/api/posts');
+    expect(list.status).toBe(200);
+    expect(list.body.total).toBe(2);
+    // Newest first, summary shape (no blocks), pending-draft flag present.
+    expect(list.body.posts.map((p: { title: string }) => p.title)).toEqual(['Zwei', 'Eins']);
+    expect(list.body.posts[0].blocks).toBeUndefined();
+    expect(list.body.posts[0].hasPendingDraft).toBe(false);
+    expect(list.body.posts[0].status).toBe('draft');
+  });
+
+  it('pages the post list with limit + offset (total stays the full count)', async () => {
+    await createPost(postPayload({ title: 'Eins', postDate: '2026-01-01T00:00:00.000Z' }));
+    await createPost(postPayload({ title: 'Zwei', postDate: '2026-02-01T00:00:00.000Z' }));
+    await createPost(postPayload({ title: 'Drei', postDate: '2026-03-01T00:00:00.000Z' }));
+
+    const firstPage = await auth.agent.get('/api/posts?limit=2&offset=0');
+    expect(firstPage.body.total).toBe(3);
+    expect(firstPage.body.posts.map((p: { title: string }) => p.title)).toEqual(['Drei', 'Zwei']);
+
+    const secondPage = await auth.agent.get('/api/posts?limit=2&offset=2');
+    expect(secondPage.body.total).toBe(3);
+    expect(secondPage.body.posts.map((p: { title: string }) => p.title)).toEqual(['Eins']);
+  });
+
   it('404s an unknown post', async () => {
     const res = await auth.agent.get('/api/posts/zzzzzz');
     expect(res.status).toBe(404);

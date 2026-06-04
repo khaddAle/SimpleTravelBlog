@@ -1,5 +1,7 @@
 import type {
   PostDto,
+  PublicPostHead,
+  PostSummary,
   TripDto,
   ImageDto,
   UserDto,
@@ -186,8 +188,13 @@ export const api = {
   },
 
   // --- posts (authoring) ---
-  async listPosts(): Promise<PostDto[]> {
-    return (await request<{ posts: PostDto[] }>('/api/posts')).posts;
+  /** Paged admin post summaries (no block bodies). `total` is the full count. */
+  async listPosts(
+    query: { limit?: number; offset?: number } = {},
+  ): Promise<{ posts: PostSummary[]; total: number }> {
+    return await request<{ posts: PostSummary[]; total: number }>(
+      `/api/posts${toQueryString({ ...query })}`,
+    );
   },
   async getPost(id: string): Promise<PostDto> {
     return (await request<{ post: PostDto }>(`/api/posts/${id}`)).post;
@@ -326,6 +333,14 @@ export const api = {
       total: number;
     }>(`/api/public/posts${toQueryString({ page, pageSize })}`);
     return { items: res.posts, page: res.page, pageSize: res.pageSize, total: res.total };
+  },
+  /** Lightweight published post heads for list views (no block bodies). */
+  async publicPostHeads(limit?: number): Promise<PublicPostHead[]> {
+    return (
+      await request<{ posts: PublicPostHead[] }>(
+        `/api/public/posts/heads${toQueryString({ limit })}`,
+      )
+    ).posts;
   },
   async publicPost(id: string): Promise<PostDto> {
     return (await request<{ post: PostDto }>(`/api/public/posts/${id}`)).post;

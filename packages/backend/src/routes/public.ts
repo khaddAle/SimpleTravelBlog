@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import {
   paginationQuerySchema,
   searchQuerySchema,
@@ -8,13 +9,36 @@ import { Post } from '../db/models/Post.js';
 import { Trip } from '../db/models/Trip.js';
 import { Image } from '../db/models/Image.js';
 import { Settings, SETTINGS_ID } from '../db/models/Settings.js';
-import { toPostDto, toTripDto, toSettingsDto, DEFAULT_SETTINGS } from '../dto.js';
+import {
+  toPostDto,
+  toPublicPostHead,
+  toTripDto,
+  toSettingsDto,
+  DEFAULT_SETTINGS,
+} from '../dto.js';
 import { buildPublishedSearch } from '../posts/search.js';
 import { tripObjectIdForShortId, tripShortIdsByObjectId } from '../posts/trips.js';
 import type { RouteContext } from './context.js';
 
 const PUBLISHED = { status: 'published' as const };
 const SEARCH_LIMIT = 100;
+
+// Inclusion projection for the lightweight list views — everything the head DTO
+// needs, and crucially never `blocks`, so list responses stay small.
+const HEAD_PROJECTION = {
+  shortId: 1,
+  title: 1,
+  subtitle: 1,
+  postDate: 1,
+  country: 1,
+  placeName: 1,
+  coverImageId: 1,
+  tripId: 1,
+} as const;
+
+const headsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+});
 
 // The WP import stamps geo-less posts with country 'XX' at 0,0 (Null Island).
 // On the Karte those would pile up off the African coast and stretch fitBounds,
@@ -58,6 +82,19 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: RouteContext): v
       page,
       pageSize,
       total,
+    };
+  });
+
+  app.get('/api/public/posts/heads', async (req) => {
+    const { limit } = headsQuerySchema.parse(req.query ?? {});
+    let query = Post.find(PUBLISHED, HEAD_PROJECTION).sort({ postDate: -1 });
+    if (limit !== undefined) query = query.limit(limit);
+    const posts = await query.lean();
+    const tripMap = await attachTripShortIds(posts);
+    return {
+      posts: posts.map((p) =>
+        toPublicPostHead(p, p.tripId ? tripMap.get(String(p.tripId)) : undefined),
+      ),
     };
   });
 

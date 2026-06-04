@@ -68,6 +68,35 @@ describe('public reader API integration', () => {
     expect(list.body.posts[0].id).toBe(published);
   });
 
+  it('serves post heads (published only, newest first, without blocks)', async () => {
+    const older = await createPublished({ postDate: '2026-01-01T00:00:00.000Z' });
+    const newer = await createPublished({
+      title: 'Neuer',
+      postDate: '2026-06-01T00:00:00.000Z',
+    });
+    await createDraft({ title: 'Entwurf' });
+
+    const res = await request(app.server).get('/api/public/posts/heads');
+    expect(res.status).toBe(200);
+    expect(res.body.posts.map((p: { id: string }) => p.id)).toEqual([newer, older]);
+    // The head projection never ships article bodies.
+    for (const head of res.body.posts) {
+      expect(head.blocks).toBeUndefined();
+    }
+  });
+
+  it('caps post heads with the optional limit', async () => {
+    await createPublished({ postDate: '2026-01-01T00:00:00.000Z' });
+    const newer = await createPublished({
+      title: 'Neuer',
+      postDate: '2026-06-01T00:00:00.000Z',
+    });
+
+    const res = await request(app.server).get('/api/public/posts/heads?limit=1');
+    expect(res.body.posts).toHaveLength(1);
+    expect(res.body.posts[0].id).toBe(newer);
+  });
+
   it('serves a single published post but 404s a draft', async () => {
     const published = await createPublished();
     const draft = await createDraft({ title: 'Entwurf' });

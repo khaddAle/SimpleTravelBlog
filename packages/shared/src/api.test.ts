@@ -5,6 +5,8 @@ import {
   createPostRequestSchema,
   updatePostRequestSchema,
   postDtoSchema,
+  publicPostHeadSchema,
+  postSummarySchema,
   createTripRequestSchema,
   updateTripRequestSchema,
   searchQuerySchema,
@@ -156,6 +158,70 @@ describe('postDtoSchema', () => {
 
   it('leaves coverImageId undefined when omitted', () => {
     expect(postDtoSchema.parse(base).coverImageId).toBeUndefined();
+  });
+});
+
+describe('publicPostHeadSchema', () => {
+  const head = {
+    id: 'p1',
+    title: 'Berge',
+    postDate: '2026-05-01T00:00:00.000Z',
+    country: 'DE',
+    placeName: 'Zugspitze',
+  };
+
+  it('accepts a minimal head without blocks', () => {
+    const parsed = publicPostHeadSchema.parse(head);
+    expect(parsed.title).toBe('Berge');
+    expect(parsed.subtitle).toBeUndefined();
+    expect(parsed.tripId).toBeUndefined();
+    expect(parsed.coverImageId).toBeUndefined();
+  });
+
+  it('carries optional subtitle, coverImageId and tripId', () => {
+    const parsed = publicPostHeadSchema.parse({
+      ...head,
+      subtitle: 'Untertitel',
+      coverImageId: 'cov1',
+      tripId: 'trip01',
+    });
+    expect(parsed).toMatchObject({
+      subtitle: 'Untertitel',
+      coverImageId: 'cov1',
+      tripId: 'trip01',
+    });
+  });
+
+  it('rejects a bad country code', () => {
+    expect(() => publicPostHeadSchema.parse({ ...head, country: 'de' })).toThrow();
+  });
+});
+
+describe('postSummarySchema', () => {
+  const summary = {
+    id: 'p1',
+    title: 'Berge',
+    postDate: '2026-05-01T00:00:00.000Z',
+    country: 'DE',
+    placeName: 'Zugspitze',
+    status: 'published',
+    hasPendingDraft: false,
+  };
+
+  it('extends the head with status and hasPendingDraft', () => {
+    const parsed = postSummarySchema.parse(summary);
+    expect(parsed.status).toBe('published');
+    expect(parsed.hasPendingDraft).toBe(false);
+  });
+
+  it('requires hasPendingDraft to be a boolean', () => {
+    expect(() =>
+      postSummarySchema.parse({ ...summary, hasPendingDraft: 'yes' }),
+    ).toThrow();
+  });
+
+  it('rejects an unknown status', () => {
+    expect(() => postSummarySchema.parse({ ...summary, status: 'archived' })).toThrow();
   });
 });
 

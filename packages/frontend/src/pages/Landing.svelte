@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { PostDto } from '@stb/shared';
+  import type { PublicPostHead } from '@stb/shared';
   import { api } from '../lib/api.js';
-  import { coverImageId } from '../lib/posts.js';
   import { imageUrl } from '../lib/images.js';
   import { formatDate } from '../lib/dates.js';
   import { countryName } from '../lib/countries.js';
@@ -11,18 +10,19 @@
   import PostCard from '../components/PostCard.svelte';
   import Photo from '../components/Photo.svelte';
 
-  let posts = $state<PostDto[]>([]);
+  let posts = $state<PublicPostHead[]>([]);
   let loading = $state(true);
   let error = $state(false);
 
   // Newest post becomes the hero teaser; the rest fill the grid below.
   const hero = $derived(posts[0]);
   const rest = $derived(posts.slice(1));
-  const heroCover = $derived(hero ? (hero.coverImageId ?? coverImageId(hero.blocks)) : undefined);
+  // Heads carry only an explicit cover (no blocks to fall back on in list views).
+  const heroCover = $derived(hero?.coverImageId);
 
   onMount(async () => {
     try {
-      posts = (await api.publicPosts(1, 12)).items;
+      posts = await api.publicPostHeads(12);
     } catch {
       error = true;
     } finally {
