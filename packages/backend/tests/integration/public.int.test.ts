@@ -196,6 +196,24 @@ describe('public reader API integration', () => {
     expect(map.body.unlocatedCount).toBe(0);
   });
 
+  it('tags map points with their trip shortId so the Karte can filter by Reise', async () => {
+    const trip = await auth.agent
+      .post('/api/trips')
+      .set('x-csrf-token', auth.csrf)
+      .send({ name: 'Alpen' });
+    const tripId = trip.body.trip.id;
+    const withTrip = await createPublished({ tripId });
+    const withoutTrip = await createPublished({ title: 'Solo', lat: 48, lng: 9 });
+
+    const map = await request(app.server).get('/api/public/map');
+    const byId = new Map<string, { tripId?: string }>(
+      map.body.points.map((p: { id: string }) => [p.id, p]),
+    );
+    expect(byId.get(withTrip)?.tripId).toBe(tripId);
+    // Trip-less posts carry no tripId at all (not null/empty string).
+    expect(byId.get(withoutTrip)).not.toHaveProperty('tripId');
+  });
+
   it('omits placeholder-coordinate posts from the map and counts them apart', async () => {
     // The WP import stamps geo-less posts with country 'XX' / placeName 'Unbekannt'
     // at 0,0. Those must not pile up at Null Island nor stretch fitBounds — they

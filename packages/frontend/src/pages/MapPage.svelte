@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { SvelteMap } from 'svelte/reactivity';
   import L from 'leaflet';
+  import type { TripDto } from '@stb/shared';
   import { api, type MapPoint } from '../lib/api.js';
   import { countryName } from '../lib/countries.js';
   import { visiblePoints, spreadOverlaps } from '../lib/mapViewport.js';
@@ -10,6 +11,10 @@
 
   let mapEl: HTMLDivElement;
   let points = $state<MapPoint[]>([]);
+  // Reisen with at least one published post; seeds the Karte's Reise filter.
+  let trips = $state<TripDto[]>([]);
+  // '' = Alle Reisen (no filter); otherwise a trip shortId.
+  let selectedTripId = $state('');
   // Published posts the WP import left without a location — surfaced as a count,
   // never as fake markers at Null Island.
   let unlocatedCount = $state(0);
@@ -23,16 +28,23 @@
   // Markers are built once and kept by id; pan/zoom only recomputes the visible
   // set and toggles a highlight class — markers are never rebuilt.
   const markerById = new SvelteMap<string, L.Marker>();
-  let mapRef: L.Map | undefined;
+  // $state so building the map re-triggers the filter effect (which otherwise
+  // bails before reading any reactive value and would capture no dependency).
+  let mapRef = $state<L.Map | undefined>(undefined);
 
-  const visibleList = $derived(points.filter((p) => visibleIds.has(p.id)));
-  const offscreenCount = $derived(points.length - visibleList.length);
+  // Markers stay built once; the Reise filter only shows/hides them client-side.
+  const filteredPoints = $derived(
+    selectedTripId ? points.filter((p) => p.tripId === selectedTripId) : points,
+  );
+  const visibleList = $derived(filteredPoints.filter((p) => visibleIds.has(p.id)));
+  const offscreenCount = $derived(filteredPoints.length - visibleList.length);
 
   onMount(async () => {
     try {
-      const data = await api.publicMap();
+      const [data, tripList] = await Promise.all([api.publicMap(), api.publicTrips()]);
       points = data.points;
       unlocatedCount = data.unlocatedCount;
+      trips = tripList;
     } finally {
       loading = false;
     }
@@ -40,7 +52,7 @@
 
   function recomputeVisible(): void {
     if (!mapRef) return;
-    const inView = visiblePoints(points, mapRef.getBounds());
+    const inView = visiblePoints(filteredPoints, mapRef.getBounds());
     visibleIds = new Set(inView.map((p) => p.id));
   }
 
@@ -72,20 +84,41 @@
       markerById.set(point.id, marker);
       return marker;
     });
-    if (markers.length > 0) {
-      // Frame the view around everything we've been, with a little breathing room.
-      map.fitBounds(L.featureGroup(markers).getBounds().pad(0.2));
-    } else {
+    if (markers.length === 0) {
       map.setView([51.1657, 10.4515], 4);
     }
     // Keep the list in sync with whatever the map is showing.
     map.on('moveend', recomputeVisible);
-    recomputeVisible();
+    // Initial framing + list sync is handled by the filter effect below, which
+    // also reframes whenever the Reise selection changes.
     return () => {
       map.remove();
       markerById.clear();
       mapRef = undefined;
     };
+  });
+
+  // Show only the selected reise's markers and reframe the map to them. Reading
+  // `mapRef` ($state) and `filteredPoints` (derived) up front makes this re-run
+  // when the map is built, the data loads, or the Reise selection changes —
+  // including back to "Alle Reisen".
+  $effect(() => {
+    const map = mapRef;
+    const keep = new Set(filteredPoints.map((p) => p.id));
+    if (!map) return;
+    const shown: L.Marker[] = [];
+    for (const [id, marker] of markerById) {
+      if (keep.has(id)) {
+        marker.addTo(map);
+        shown.push(marker);
+      } else {
+        map.removeLayer(marker);
+      }
+    }
+    if (shown.length > 0) {
+      map.fitBounds(L.featureGroup(shown).getBounds().pad(0.2));
+    }
+    recomputeVisible();
   });
 
   // Mirror the hovered post onto its marker without touching the others.
@@ -106,6 +139,17 @@
     <p class="lede stack-16">
       Jeder Punkt ein Beitrag. Tippe auf einen Ort, um die Reise zu öffnen.
     </p>
+    {#if trips.length > 0}
+      <label class="reise-filter">
+        <span class="lbl">Reise</span>
+        <select bind:value={selectedTripId}>
+          <option value="">Alle Reisen</option>
+          {#each trips as t (t.id)}
+            <option value={t.id}>{t.name}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
   </div>
 
   <div class="map-layout">
@@ -160,6 +204,28 @@
 <style>
   .map-intro {
     padding: 48px 0 26px;
+  }
+  .reise-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 18px;
+  }
+  .reise-filter .lbl {
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .reise-filter select {
+    font: inherit;
+    font-size: 14px;
+    padding: 7px 11px;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 5px;
   }
   .map-layout {
     display: grid;

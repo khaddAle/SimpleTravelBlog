@@ -68,6 +68,8 @@ export interface MapPoint {
   lng: number;
   country: string;
   placeName: string;
+  /** Trip shortId for the Karte's Reise filter; absent for trip-less posts. */
+  tripId?: string;
 }
 
 export interface MapData {

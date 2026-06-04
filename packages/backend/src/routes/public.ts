@@ -150,19 +150,25 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: RouteContext): v
     const [posts, unlocatedCount] = await Promise.all([
       Post.find(
         { ...PUBLISHED, ...LOCATED_MATCH },
-        { shortId: 1, title: 1, lat: 1, lng: 1, country: 1, placeName: 1 },
+        { shortId: 1, title: 1, lat: 1, lng: 1, country: 1, placeName: 1, tripId: 1 },
       ).lean(),
       Post.countDocuments({ ...PUBLISHED, ...UNLOCATED_MATCH }),
     ]);
+    const tripMap = await attachTripShortIds(posts);
     return {
-      points: posts.map((p) => ({
-        id: p.shortId,
-        title: p.title,
-        lat: p.lat,
-        lng: p.lng,
-        country: p.country,
-        placeName: p.placeName,
-      })),
+      points: posts.map((p) => {
+        const tripShortId = p.tripId ? tripMap.get(String(p.tripId)) : undefined;
+        return {
+          id: p.shortId,
+          title: p.title,
+          lat: p.lat,
+          lng: p.lng,
+          country: p.country,
+          placeName: p.placeName,
+          // Lets the Karte filter by Reise; absent for trip-less posts.
+          ...(tripShortId ? { tripId: tripShortId } : {}),
+        };
+      }),
       unlocatedCount,
     };
   });

@@ -14,6 +14,7 @@ vi.mock('leaflet', () => {
     fitBounds: vi.fn().mockReturnThis(),
     on: vi.fn().mockReturnThis(),
     getBounds: vi.fn(() => bounds),
+    removeLayer: vi.fn().mockReturnThis(),
     remove: vi.fn(),
   };
   const makeMarker = () => {
@@ -39,14 +40,21 @@ vi.mock('leaflet', () => {
 beforeEach(() => {
   vi.clearAllMocks();
   viewport.contains = () => true;
+  // The Reise dropdown loads trips on mount; default to none so existing specs
+  // (which only care about markers) don't have to stub it.
+  vi.spyOn(api, 'publicTrips').mockResolvedValue([]);
 });
 afterEach(() => vi.restoreAllMocks());
 
 const points = [
-  { id: 'p1', title: 'Berge', lat: 47, lng: 11, country: 'AT', placeName: 'Zugspitze' },
-  { id: 'p2', title: 'Meer', lat: 54, lng: 8, country: 'DE', placeName: 'Sylt' },
+  { id: 'p1', title: 'Berge', lat: 47, lng: 11, country: 'AT', placeName: 'Zugspitze', tripId: 't1' },
+  { id: 'p2', title: 'Meer', lat: 54, lng: 8, country: 'DE', placeName: 'Sylt', tripId: 't2' },
 ];
 const mapData = (over = {}) => ({ points, unlocatedCount: 0, ...over });
+const trips = [
+  { id: 't1', name: 'Alpen', postCount: 1 },
+  { id: 't2', name: 'Nordsee', postCount: 1 },
+];
 
 describe('MapPage', () => {
   it('renders the page intro', async () => {
@@ -151,6 +159,68 @@ describe('MapPage', () => {
     const events = markerResults[0]!.value.on.mock.calls.map((c) => c[0]);
     expect(events).toContain('mouseover');
     expect(events).toContain('mouseout');
+  });
+
+  it('offers a Reise filter defaulting to "Alle Reisen" with an option per trip', async () => {
+    vi.spyOn(api, 'publicMap').mockResolvedValue(mapData());
+    vi.spyOn(api, 'publicTrips').mockResolvedValue(trips);
+    render(MapPage);
+
+    const select = (await screen.findByLabelText('Reise')) as HTMLSelectElement;
+    expect(select.value).toBe('');
+    expect(screen.getByRole('option', { name: 'Alle Reisen' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Alpen' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Nordsee' })).toBeInTheDocument();
+  });
+
+  it('filters the side list to the selected reise and refits the map to it', async () => {
+    vi.spyOn(api, 'publicMap').mockResolvedValue(mapData());
+    vi.spyOn(api, 'publicTrips').mockResolvedValue(trips);
+    render(MapPage);
+
+    const select = (await screen.findByLabelText('Reise')) as HTMLSelectElement;
+    // Both posts visible before filtering.
+    expect(screen.getByRole('heading', { level: 4, name: 'Berge' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 4, name: 'Meer' })).toBeInTheDocument();
+
+    const mapInstance = (L.map as unknown as { mock: { results: { value: { fitBounds: ReturnType<typeof vi.fn> } }[] } }).mock.results[0]!.value;
+    mapInstance.fitBounds.mockClear();
+
+    await fireEvent.change(select, { target: { value: 't1' } });
+
+    // Only the Alpen post (Berge) remains in the list…
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { level: 4, name: 'Meer' })).toBeNull(),
+    );
+    expect(screen.getByRole('heading', { level: 4, name: 'Berge' })).toBeInTheDocument();
+    // …and the map reframes to the filtered selection.
+    expect(mapInstance.fitBounds).toHaveBeenCalled();
+  });
+
+  it('restores all posts when "Alle Reisen" is reselected', async () => {
+    vi.spyOn(api, 'publicMap').mockResolvedValue(mapData());
+    vi.spyOn(api, 'publicTrips').mockResolvedValue(trips);
+    render(MapPage);
+
+    const select = (await screen.findByLabelText('Reise')) as HTMLSelectElement;
+    await fireEvent.change(select, { target: { value: 't1' } });
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { level: 4, name: 'Meer' })).toBeNull(),
+    );
+
+    await fireEvent.change(select, { target: { value: '' } });
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 4, name: 'Meer' })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('heading', { level: 4, name: 'Berge' })).toBeInTheDocument();
+  });
+
+  it('hides the Reise filter when there are no trips', async () => {
+    vi.spyOn(api, 'publicMap').mockResolvedValue(mapData());
+    vi.spyOn(api, 'publicTrips').mockResolvedValue([]);
+    render(MapPage);
+    await screen.findByText('Im Kartenausschnitt');
+    expect(screen.queryByLabelText('Reise')).toBeNull();
   });
 
   it('falls back to a default view when there are no points', async () => {
