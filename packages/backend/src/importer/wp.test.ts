@@ -160,6 +160,72 @@ describe('htmlToBlocks — per-element mapping', () => {
   });
 });
 
+describe('htmlToBlocks — inline image recovery (in document order)', () => {
+  it('keeps both the text and a trailing image in a mixed <p>', () => {
+    const { blocks } = htmlToBlocks('<p>Erstes Thema<img src="https://x/a.jpg"/></p>');
+    expect(blocks).toEqual([
+      { type: 'paragraph', text: 'Erstes Thema' },
+      { type: 'image', src: 'https://x/a.jpg' },
+    ]);
+  });
+
+  it('keeps a leading image before its following text', () => {
+    const { blocks } = htmlToBlocks('<p><img src="https://x/a.jpg"/>Nachtext</p>');
+    expect(blocks).toEqual([
+      { type: 'image', src: 'https://x/a.jpg' },
+      { type: 'paragraph', text: 'Nachtext' },
+    ]);
+  });
+
+  it('keeps every image in a multi-image <p>, not just the first', () => {
+    const { blocks } = htmlToBlocks(
+      '<p><img src="https://x/a.jpg"/><img src="https://x/b.jpg"/></p>',
+    );
+    expect(blocks).toEqual([
+      { type: 'image', src: 'https://x/a.jpg' },
+      { type: 'image', src: 'https://x/b.jpg' },
+    ]);
+  });
+
+  it('splits interleaved text and images into ordered blocks', () => {
+    const { blocks } = htmlToBlocks(
+      '<p>t1<img src="https://x/a.jpg"/>t2<img src="https://x/b.jpg"/>t3</p>',
+    );
+    expect(blocks).toEqual([
+      { type: 'paragraph', text: 't1' },
+      { type: 'image', src: 'https://x/a.jpg' },
+      { type: 'paragraph', text: 't2' },
+      { type: 'image', src: 'https://x/b.jpg' },
+      { type: 'paragraph', text: 't3' },
+    ]);
+  });
+
+  it('recovers an <a>-wrapped image alongside its paragraph text', () => {
+    const { blocks } = htmlToBlocks(
+      '<p>Bildtext <a href="https://x/full.jpg"><img src="https://x/a.jpg"/></a></p>',
+    );
+    expect(blocks).toEqual([
+      { type: 'paragraph', text: 'Bildtext' },
+      { type: 'image', src: 'https://x/a.jpg' },
+    ]);
+  });
+
+  it('uses the image alt as caption, never the surrounding narrative text', () => {
+    const { blocks } = htmlToBlocks(
+      '<p>Lange Erzählung<img src="https://x/a.jpg" alt="Kurz"/></p>',
+    );
+    expect(blocks).toEqual([
+      { type: 'paragraph', text: 'Lange Erzählung' },
+      { type: 'image', src: 'https://x/a.jpg', caption: 'Kurz' },
+    ]);
+  });
+
+  it('still maps a pure-text <p> to a single paragraph', () => {
+    const { blocks } = htmlToBlocks('<p>Nur Text</p>');
+    expect(blocks).toEqual([{ type: 'paragraph', text: 'Nur Text' }]);
+  });
+});
+
 describe('stripWpSizeSuffix', () => {
   it('removes a -WxH suffix before the extension', () => {
     expect(stripWpSizeSuffix('https://x/a-1024x683.jpg')).toBe('https://x/a.jpg');
@@ -305,6 +371,47 @@ describe('mapPost', () => {
     const m = mapPost(post, index);
     const img = m.request.blocks.find((b) => b.type === 'image');
     expect(img).toEqual({ type: 'image', src: 'https://x/foo.jpg' });
+  });
+
+  it('recovers every content image from WP classic-editor markup (regression: silent image drop)', () => {
+    // WordPress wpautop groups an image with its caption-line into one <p>, and
+    // sometimes several images into one <p>. The old mapping kept the text and
+    // dropped those images without recording a loss. All must now survive, in
+    // document order, with consecutive ones coalesced into a gallery.
+    const post: WpPost = {
+      ...byId(102),
+      featured_media: 0,
+      content: {
+        rendered:
+          '<p>Reine Erzählung.</p>' +
+          '<p><img src="https://x/solo.jpg"/></p>' +
+          '<p>Bildtext eins<img src="https://x/a.jpg"/></p>' +
+          '<p>Zwischentext.</p>' +
+          '<p><img src="https://x/b1.jpg"/><img src="https://x/b2.jpg"/></p>' +
+          '<p>Schlusswort.</p>' +
+          '<p><img src="https://x/g1.jpg"/></p>' +
+          '<p><img src="https://x/g2.jpg"/></p>' +
+          '<p><img src="https://x/g3.jpg"/></p>',
+      },
+    };
+    const { blocks } = mapPost(post, index).request;
+    const imageRefs = blocks.reduce(
+      (n, b) => n + (b.type === 'image' ? 1 : b.type === 'gallery' ? b.srcs.length : 0),
+      0,
+    );
+    // 1 solo + 1 from the mixed <p> + 2 from the multi-image <p> + 3 trailing.
+    expect(imageRefs).toBe(7);
+    // The image that shared a <p> with text is no longer lost.
+    expect(blocks).toContainEqual({ type: 'image', src: 'https://x/a.jpg' });
+    // The 2nd image of a multi-image <p> — previously dropped — survives too.
+    expect(blocks).toContainEqual({ type: 'image', src: 'https://x/b2.jpg' });
+    // The trailing run of three collapses into one gallery.
+    expect(blocks).toContainEqual({
+      type: 'gallery',
+      srcs: ['https://x/g1.jpg', 'https://x/g2.jpg', 'https://x/g3.jpg'],
+    });
+    // Narrative text survives as its own paragraphs (never as image captions).
+    expect(blocks).toContainEqual({ type: 'paragraph', text: 'Bildtext eins' });
   });
 
   it('records a location_missing loss and applies metadata defaults', () => {

@@ -1,4 +1,7 @@
 import * as cheerio from 'cheerio';
+// cheerio's own typings source the DOM node union from domhandler (always present
+// as a cheerio dependency); we only need the type, erased at build.
+import type { AnyNode } from 'domhandler';
 import { z } from 'zod';
 import type { Block } from '@stb/shared';
 
@@ -161,22 +164,51 @@ export function htmlToBlocks(
     });
   };
 
+  const pushParagraph = (raw: string): void => {
+    const text = normalize(raw);
+    if (text) blocks.push({ type: 'paragraph', text: clamp(text, MAX.paragraph) });
+  };
+
+  // Walk a <p>'s inline content in document order, emitting a paragraph block for
+  // each text run and an image block for each <img> (descending into inline
+  // wrappers such as <a>). WordPress's classic editor groups an image with its
+  // surrounding narrative — and several images — into a single <p>; mapping the
+  // whole <p> to either text or one image (the old behaviour) silently dropped
+  // every other image. Narrative text stays a paragraph; an image's caption only
+  // ever comes from its own alt/figcaption, never the surrounding prose.
+  const pushParagraphWithInlineImages = (container: cheerio.Cheerio<never>): void => {
+    let buffer = '';
+    const visit = (node: AnyNode): void => {
+      if ('tagName' in node) {
+        const tag = node.tagName.toLowerCase();
+        if (tag === 'img') {
+          pushParagraph(buffer);
+          buffer = '';
+          pushImage($(node) as cheerio.Cheerio<never>);
+          return;
+        }
+        if (tag === 'br') {
+          buffer += ' ';
+          return;
+        }
+        for (const child of node.children) visit(child);
+        return;
+      }
+      if (node.nodeType === 3) buffer += node.data;
+    };
+    for (const node of container.contents().toArray()) visit(node);
+    pushParagraph(buffer);
+  };
+
   $.root()
     .children()
     .each((_, node) => {
       const el = $(node);
       const tag = el.prop('tagName')?.toLowerCase();
       switch (tag) {
-        case 'p': {
-          const img = el.find('img').first();
-          const text = normalize(el.text());
-          if (img.length > 0 && !text) {
-            pushImage(img as cheerio.Cheerio<never>);
-          } else if (text) {
-            blocks.push({ type: 'paragraph', text: clamp(text, MAX.paragraph) });
-          }
+        case 'p':
+          pushParagraphWithInlineImages(el as cheerio.Cheerio<never>);
           break;
-        }
         case 'h1':
         case 'h2':
         case 'h3':
