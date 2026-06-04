@@ -32,9 +32,12 @@ test('an unpublished draft is hidden from the reader', async ({ page }) => {
   await gotoNewPost(page);
   await fillMetadata(page, { title });
   await addParagraph(page, 'Noch nicht fertig.');
-  // No manual "save" button anymore — autosave persists the draft; wait for the
-  // confirmation, then return to the list via the nav (no unsaved-changes prompt).
-  await expect(page.getByText('Gespeichert')).toBeVisible();
+  // No manual "save" button anymore — autosave persists the new draft and swaps
+  // the URL to its edit route. That id-bearing URL is the real "saved" signal:
+  // the new-post → edit-route transition re-instantiates the editor, so the
+  // transient "Gespeichert" pill never lands in the DOM and can't be awaited.
+  // Once persisted the editor is no longer dirty, so the nav must not prompt.
+  await expect(page).toHaveURL(/#\/admin\/beitrag\/[a-z0-9]+$/i);
   await page.getByRole('link', { name: 'Beiträge' }).click();
   await expect(page).toHaveURL(/#\/admin$/);
 
