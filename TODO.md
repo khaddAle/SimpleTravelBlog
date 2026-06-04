@@ -367,6 +367,51 @@ earlier `3973b83`…`cbad267`). User confirmed F+G working on dev.
       MetadataSidebar/PostEditor tests.) Plan in memory `project_round2-hi-plan.md`.
       Full suite 453 pass (+12), typecheck + eslint clean. NOT yet committed.
 
+### Round 4 — DONE 2026-06-04 (5 user-requested improvements, TDD)
+
+Plan in memory `project_round4-improvements-plan.md`. Stages stopped/reviewed
+per commit; e2e is not in the CI gate (see `project_travelblog-build-state.md`).
+
+- [X] **Stage 1 — Lightweight list projections + admin paging (`487afc9`).** New
+      `publicPostHeadSchema` / `postSummarySchema` (no `blocks`); backend
+      `GET /api/public/posts/heads?limit` and a paged `GET /api/posts?limit&offset`
+      → `{ posts: PostSummary[], total }` (both projection-excluded from bodies).
+      Reader list consumers (Landing, next-post lookup) and admin `PostList`
+      migrated to heads/summaries + „Mehr laden"/„Alle laden".
+- [X] **Stage 2 — Archive accordion (`1983288`).** `lib/archive.ts` pure
+      `groupBy('reise'|'land'|'jahr', heads, trips)` (groups by latest-date desc,
+      posts newest-first, „Ohne Reise"/„Ohne Land" pinned last); `Archive.svelte`
+      rebuilt as a one-open accordion with a segmented Reise/Land/Jahr toggle over
+      one heads request (client-side regroup, no refetch).
+- [X] **Stage 3 — Draft-snapshot autosave (`0ad9ae9`).** Typed `draft` subdoc on
+      `Post`; `PUT /api/posts/:shortId/draft` (published → stash w/ `timestamps:false`;
+      draft → apply live) + `POST …/publish` (promote, stamp `publishedAt` once) +
+      `POST …/discard-draft`; DTO gains optional `draft` + derived `hasPendingDraft`.
+      New `lib/autosave.ts` engine (2 s idle / 15 s cap, fire-time payload,
+      single-flight + trailing coalesce); `PostEditor` reworked (unsavedDirty vs
+      hasPendingDraft, navGuard, flush on hide/destroy, create-on-first-autosave).
+- [X] **Stage 4 — Map Reise filter (`58e4507`).** `GET /api/public/map` points
+      carry `tripId` (trip shortId); `MapPage` adds an „Alle Reisen" `<select>` that
+      filters markers client-side and refits bounds to the selection.
+- [X] **Stage 5 — Editor gallery horizontal-overflow — CANNOT REPRODUCE (no code).**
+      The plan's root cause (bare `1fr` gallery tracks leaking intrinsic width) was
+      false: both editor and reader galleries already clip with `overflow:hidden`,
+      contributing zero overflow. A separate `AdminLayout` top-bar (`.bar`) no-wrap
+      overflow exists between ~640–1200px but was parked by the user; not fixed here.
+- [X] **e2e — fix the flaky „unpublished draft is hidden" spec.** It waited on
+      `getByText('Gespeichert')`, a substring match that also hit the
+      „Ungespeicherte Änderungen" dirty pill, so it clicked away mid-edit and the
+      navGuard vetoed the nav. Now waits for the autosaved post's edit-route URL
+      (the real persistence signal). Pre-existing failure, surfaced because e2e is
+      not in the CI gate.
+- [X] **Stage 6 — Documentation refresh (this commit).** `docs/api.md` (posts
+      paging + draft/publish/discard rows + public heads/map-tripId/facets),
+      `docs/architecture.md` (draft subdoc + `hasPendingDraft`, autosave + list
+      projections + archive/map notes), `docs/target-picture.md` (archive
+      accordion, map Reise filter, autosave), and this log.
+- [ ] **Stage 7 — Release to dev (`0.8.0`).** Pending: `/travelblog-release` once
+      the user gives the explicit go (outward-facing). Prod promotion out of scope.
+
 ### Small — pure frontend, isolated
 
 - [X] **Show selected-image count in the image picker.** `ImagePicker.svelte`

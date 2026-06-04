@@ -20,10 +20,13 @@ which are ObjectIds on the admin endpoints.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/posts` | All posts (drafts included), newest first. |
+| GET | `/api/posts` | Post summaries (drafts included), newest first. Paged: `?limit&offset` → `{ posts: PostSummary[], total }`. No `blocks` (list views never pull article bodies). |
 | POST | `/api/posts` | Create a draft. Body: `createPostRequestSchema`. → `201`. |
-| GET | `/api/posts/:shortId` | Single post (any status). |
-| PATCH | `/api/posts/:shortId` | Partial update. Publishing stamps `publishedAt` once. |
+| GET | `/api/posts/:shortId` | Single post (any status). Carries the `draft` snapshot when a published post has unpublished autosaved edits. |
+| PUT | `/api/posts/:shortId/draft` | Autosave. Body: `createPostRequestSchema`. Published post → stashes the edit in a `draft` subdoc **without bumping `updatedAt`**; draft post → applies straight to the live doc. → `{ savedAt, hasPendingDraft }`. |
+| POST | `/api/posts/:shortId/publish` | Promote a pending `draft` to the live article (or publish a draft post as-is). Stamps `publishedAt` once. → `{ post }`. |
+| POST | `/api/posts/:shortId/discard-draft` | Drop a pending `draft`, reverting the editor to the live article (no `updatedAt` bump). → `{ post }`. |
+| PATCH | `/api/posts/:shortId` | Partial update (legacy back-compat / importer). Publishing stamps `publishedAt` once. |
 | DELETE | `/api/posts/:shortId` | → `204`. |
 | GET | `/api/trips` | Trips with `postCount`. |
 | POST | `/api/trips` | Create. Unique name → `409` on duplicate. → `201`. |
@@ -48,10 +51,12 @@ which are ObjectIds on the admin endpoints.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/public/posts` | Published posts, paginated. |
+| GET | `/api/public/posts` | Published posts, paginated (full DTOs). |
+| GET | `/api/public/posts/heads` | Published post **heads** (no `blocks`), newest first; `?limit`. Feeds list views (landing, archive, next-post). → `{ posts: PublicPostHead[] }`. |
 | GET | `/api/public/posts/:shortId` | Single published post (`404` for drafts). |
-| GET | `/api/public/search` | `searchQuerySchema`: german `$text` + country + trip + date range. |
+| GET | `/api/public/search` | `searchQuerySchema`: folded substring + country + trip + date range. |
+| GET | `/api/public/facets` | `{ countries, months }` for the Suche filters — server-computed so the options stay complete past the first page. |
 | GET | `/api/public/trips` | Trips that have ≥1 published post. |
-| GET | `/api/public/map` | Published post coordinates for the map. |
+| GET | `/api/public/map` | Located published posts → `{ points, unlocatedCount }`. Each point carries `tripId` (trip shortId) when set, for the Karte's Reise filter. |
 | GET | `/api/public/settings` | Branding. |
 | GET | `/api/public/images/:shortId/:variant` | Streams `display`/`thumb` WebP from storage. |

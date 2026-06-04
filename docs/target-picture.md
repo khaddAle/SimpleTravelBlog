@@ -46,8 +46,8 @@ This project replaces it with a small, self-hosted, family-scale travel blog on 
 ## Reader experience
 
 - **Landing**: hero teaser card of the latest post + grid of older posts + explicit `[Map view]` and `[All posts]` links.
-- **Map page**: Leaflet + OSM tiles, one pin per post; click pin → post.
-- **Archive**: grouped Country → Trip → Posts.
+- **Map page**: Leaflet + OSM tiles, one pin per post; click pin → post; a Reise filter narrows the map to a single trip.
+- **Archive**: accordion grouped by Reise / Land / Jahr (toggle), newest first.
 - **Search**: filterable — text + country + trip + date range.
 - **Post page**: blocks rendered in order, minimal chrome, image-first.
 - **Language**: German UI and content.
@@ -56,7 +56,7 @@ This project replaces it with a small, self-hosted, family-scale travel blog on 
 
 - **Block editor**: each block is discrete with explicit `+ Insert block here +` affordances. Reorder via per-block ▲/▼ arrows.
 - **Metadata sidebar**: post date; country picker; place name; lat/lng (map picker — click to set, also accepts paste); trip (pick existing or create new by name).
-- **Draft / Published**: posts start as draft; explicit Publish action; can be unpublished.
+- **Draft / Published**: posts start as draft; explicit Publish action; can be unpublished. Edits autosave to a draft snapshot (a published post keeps serving its live version until "Veröffentlichen" promotes the draft; "Änderungen verwerfen" discards it).
 - **Image upload pipeline**: JPEG / PNG / HEIC / WebP, max ~20 MB. Server transcodes to WebP display + thumb. Original discarded.
 - **Image picker**: library or upload-new; filename search, date sort/filter, used-in-post filter; bulk delete refuses referenced images; orphan view; per-image "where used".
 - **Branding settings**: site title, logo upload, single accent color.

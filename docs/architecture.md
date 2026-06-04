@@ -125,6 +125,15 @@ Mongoose models (`packages/backend/src/db/models/`). Posts carry an ordered
 denormalized German-language `searchText` rebuilt from title/subtitle/placeName +
 block text on every save (german `$text` index).
 
+A published post may also carry an optional, **typed** `draft` subdocument: a
+snapshot of the editable fields written by the editor's autosave so an
+in-progress edit never reaches readers (the public DTO mapper never projects
+`draft`). Its mere presence is the authoritative `hasPendingDraft` flag exposed
+on the post DTO and summary. "Veröffentlichen" promotes the draft to the
+top-level fields and clears it; "Änderungen verwerfen" drops it. Draft writes
+save with `timestamps: false`, so `updatedAt` (which readers/sitemap rely on)
+only moves when live content actually changes.
+
 ```mermaid
 erDiagram
   USER ||--o{ POST  : authors
@@ -153,6 +162,7 @@ erDiagram
     objectId authorId
     date   publishedAt "set on first publish"
     string searchText "denormalized, german text index"
+    object draft "optional autosave snapshot; readers never see it"
   }
   TRIP {
     string shortId "unique"
@@ -217,9 +227,17 @@ flowchart TD
 - **Editor** (`admin/editor/`) — `BlockEditor` (▲/▼ reorder only, insert,
   delete), `ImagePicker` (paginated browse, filename filter, orphans toggle,
   upload via SSE), `MapPicker` (Leaflet click + Nominatim search),
-  `UploadProgress` (consumes the upload SSE channel).
+  `UploadProgress` (consumes the upload SSE channel). `PostEditor` autosaves
+  through `lib/autosave.ts` (2 s idle / 15 s cap, fire-time payload, single-flight
+  + trailing coalesce); a new post is created on first valid autosave and the
+  URL is swapped to its edit route via the router's `replace`.
+- **List views** — reader lists (Landing, Archive, next-post lookup) and the
+  admin "Beiträge" page consume lightweight head/summary projections (no
+  `blocks`). Archive is an accordion grouping the heads by **Reise / Land / Jahr**
+  client-side (one request, instant regroup); MapPage filters markers by Reise.
 - **Routing/guard** — admin routes redirect to `/login` when unauthenticated;
   the editor reaches images/galleries through a Promise-based picker bridge.
+  `lib/navGuard.ts` confirms in-app departures while edits aren't yet autosaved.
 - All UI strings are German, inline (no i18n framework). Pure helpers
   (`plaintext`, `dates`, `archive`, `posts`, `nominatim`) are unit-tested;
   components use `@testing-library/svelte`. Leaflet is mocked in component tests.
