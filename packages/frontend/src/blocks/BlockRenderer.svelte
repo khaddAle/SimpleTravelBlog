@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Block } from '@stb/shared';
+  import type { Dim } from '../lib/masonry.js';
   import TitleBlock from './TitleBlock.svelte';
   import SubtitleBlock from './SubtitleBlock.svelte';
   import ParagraphBlock from './ParagraphBlock.svelte';
@@ -9,7 +10,13 @@
   import DividerBlock from './DividerBlock.svelte';
 
   // `lead` marks the post's first image so it renders as the wide bleed header.
-  let { block, lead = false }: { block: Block; lead?: boolean } = $props();
+  // `images` is the §0 dimension sidecar, threaded to the image/gallery blocks
+  // for orientation-aware / masonry rendering.
+  let {
+    block,
+    lead = false,
+    images,
+  }: { block: Block; lead?: boolean; images?: Record<string, Dim> | undefined } = $props();
 </script>
 
 {#if block.type === 'title'}
@@ -19,9 +26,9 @@
 {:else if block.type === 'paragraph'}
   <ParagraphBlock {block} />
 {:else if block.type === 'image'}
-  <ImageBlock {block} {lead} />
+  <ImageBlock {block} {lead} {images} />
 {:else if block.type === 'gallery'}
-  <GalleryBlock {block} />
+  <GalleryBlock {block} {images} />
 {:else if block.type === 'quote'}
   <QuoteBlock {block} />
 {:else if block.type === 'divider'}

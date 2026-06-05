@@ -64,7 +64,7 @@
     </div>
 
     {#each post.blocks as block, i (i)}
-      <BlockRenderer {block} lead={i === leadIndex} />
+      <BlockRenderer {block} lead={i === leadIndex} images={post.images} />
     {/each}
 
     <div class="wrap-narrow">

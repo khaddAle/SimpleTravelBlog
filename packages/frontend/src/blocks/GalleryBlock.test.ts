@@ -4,15 +4,25 @@ import userEvent from '@testing-library/user-event';
 import GalleryBlock from './GalleryBlock.svelte';
 
 describe('GalleryBlock', () => {
-  it('renders a bleed gallery of framed r43 sm thumbnails, one per image id', () => {
+  it('renders a masonry of framed sm tiles at natural ratios (no r43 cover)', () => {
     const { container } = render(GalleryBlock, {
       block: { type: 'gallery', imageIds: ['a1', 'b2', 'c3'] },
+      images: {
+        a1: { width: 1600, height: 900 },
+        b2: { width: 1000, height: 1500 },
+        c3: { width: 1600, height: 900 },
+      },
     });
-    expect(container.querySelector('figure.bleed.block .gallery')).not.toBeNull();
-    // Gallery thumbnails are decorative (empty alt), so query the DOM directly.
-    const frames = container.querySelectorAll('.gallery .photo.sm .frame.r43 img');
+    expect(container.querySelector('figure.bleed.block .masonry')).not.toBeNull();
+    // No forced r43 cover frames — each tile carries its natural ratio inline.
+    expect(container.querySelector('.frame.r43')).toBeNull();
+    const frames = container.querySelectorAll('.masonry .photo.sm .frame');
     expect(frames).toHaveLength(3);
-    expect(frames[0]).toHaveAttribute('src', '/api/public/images/a1/thumb');
+    // The portrait tile keeps its tall ratio.
+    const portrait = [...frames].find((f) =>
+      f.querySelector('img')?.getAttribute('src')?.includes('/b2/'),
+    );
+    expect(portrait?.getAttribute('style')).toContain('aspect-ratio: 1000/1500');
     expect(screen.getAllByRole('button', { name: 'Bild öffnen' })).toHaveLength(3);
   });
 

@@ -52,4 +52,53 @@ describe('ImageBlock', () => {
     expect(img).toHaveAttribute('alt', '');
     expect(img).toHaveAttribute('src', '/api/public/images/img2/display');
   });
+
+  it('renders a portrait body image narrow/centered at natural ratio, not r43', () => {
+    const { container } = render(ImageBlock, {
+      block: { type: 'image', imageId: 'p1', caption: 'Hoch' },
+      images: { p1: { width: 1000, height: 1500 } },
+    });
+    // No forced r43 cover frame for a portrait.
+    expect(container.querySelector('.frame.r43')).toBeNull();
+    const figure = container.querySelector('figure.block.portrait');
+    expect(figure).not.toBeNull();
+    const frame = container.querySelector('.photo .frame');
+    expect(frame?.getAttribute('style')).toContain('aspect-ratio: 1000/1500');
+    expect(screen.getByRole('img', { name: 'Hoch' })).toHaveAttribute(
+      'src',
+      '/api/public/images/p1/display',
+    );
+  });
+
+  it('keeps a landscape body image as the r43 frame', () => {
+    const { container } = render(ImageBlock, {
+      block: { type: 'image', imageId: 'l1' },
+      images: { l1: { width: 1600, height: 900 } },
+    });
+    expect(container.querySelector('figure.portrait')).toBeNull();
+    expect(container.querySelector('.wrap-narrow .photo .frame.r43 img')).toHaveAttribute(
+      'src',
+      '/api/public/images/l1/display',
+    );
+  });
+
+  it('keeps a portrait lead image as the wide r169 bleed (lead overrides orientation)', () => {
+    const { container } = render(ImageBlock, {
+      block: { type: 'image', imageId: 'lead1' },
+      lead: true,
+      images: { lead1: { width: 1000, height: 1500 } },
+    });
+    expect(container.querySelector('figure.portrait')).toBeNull();
+    expect(container.querySelector('figure.bleed.block .photo .frame.r169')).not.toBeNull();
+  });
+
+  it('opens the lightbox from a portrait body image', async () => {
+    const user = userEvent.setup();
+    render(ImageBlock, {
+      block: { type: 'image', imageId: 'p1', caption: 'Hoch' },
+      images: { p1: { width: 1000, height: 1500 } },
+    });
+    await user.click(screen.getByRole('button', { name: 'Bild öffnen' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
 });
