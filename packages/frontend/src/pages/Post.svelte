@@ -12,7 +12,12 @@
 
   let post = $state<PostDto | null>(null);
   let status = $state<'loading' | 'ok' | 'notfound' | 'error'>('loading');
+  // Heads are served newest → oldest, so the *previous* neighbour is the newer
+  // post (one step up the list) and the *next* neighbour is the older one.
+  let prevPost = $state<PublicPostHead | null>(null);
   let nextPost = $state<PublicPostHead | null>(null);
+  // The trip this post belongs to (its source "Reise"), resolved best-effort.
+  let tripName = $state<string | null>(null);
 
   // The lead image is the post's first image block — it bleeds wide at r169.
   const leadIndex = $derived(post ? post.blocks.findIndex((b) => b.type === 'image') : -1);
@@ -25,13 +30,21 @@
       status = err instanceof ApiError && err.status === 404 ? 'notfound' : 'error';
       return;
     }
-    // The "next post" link is a nicety — never let a list failure break the page.
-    try {
-      const heads = await api.publicPostHeads();
+    // Neighbour links and the Reise source link are niceties — never let a list
+    // failure break the article. allSettled keeps each independent.
+    const [headsResult, tripsResult] = await Promise.allSettled([
+      api.publicPostHeads(),
+      api.publicTrips(),
+    ]);
+    if (headsResult.status === 'fulfilled') {
+      const heads = headsResult.value;
       const here = heads.findIndex((p) => p.id === params.id);
+      if (here > 0) prevPost = heads[here - 1] ?? null;
       if (here >= 0 && here + 1 < heads.length) nextPost = heads[here + 1] ?? null;
-    } catch {
-      // ignore — the article still renders without a neighbour link
+    }
+    const tripId = post.tripId;
+    if (tripsResult.status === 'fulfilled' && tripId) {
+      tripName = tripsResult.value.find((t) => t.id === tripId)?.name ?? null;
     }
   });
 </script>
@@ -60,6 +73,11 @@
         <div class="post-meta">
           <b>{formatDate(post.postDate)}</b><span class="sep">·</span>{post.placeName}
         </div>
+        {#if tripName && post.tripId}
+          <a class="link-accent reise-link" href={`#/archiv?reise=${post.tripId}`}>
+            Reise: {tripName}
+          </a>
+        {/if}
       </div>
     </div>
 
@@ -69,11 +87,19 @@
 
     <div class="wrap-narrow">
       <nav class="article-nav">
-        <a href="#/archiv"><span class="lbl">Zurück</span>Alle Beiträge</a>
+        {#if prevPost}
+          <a class="prev" href={`#/beitrag/${prevPost.id}`}>
+            <span class="lbl">Vorheriger Beitrag</span><span class="ttl">← {prevPost.title}</span>
+          </a>
+        {:else}
+          <span class="slot"></span>
+        {/if}
         {#if nextPost}
           <a class="next" href={`#/beitrag/${nextPost.id}`}>
-            <span class="lbl">Nächster Beitrag</span>{nextPost.title} →
+            <span class="lbl">Nächster Beitrag</span><span class="ttl">{nextPost.title} →</span>
           </a>
+        {:else}
+          <span class="slot"></span>
         {/if}
       </nav>
     </div>
@@ -87,7 +113,37 @@
     padding: 60px 0;
     color: var(--muted);
   }
+  /* Reise source link: a quiet, accented affordance under the meta line. */
+  .reise-link {
+    display: inline-block;
+    margin-top: 14px;
+    font-size: 14px;
+  }
+  /* Two-slot prev/next nav: newer on the left, older on the right. An absent
+     side renders an empty .slot so the present side keeps its edge. */
+  .article-nav .ttl {
+    display: block;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .article-nav a:hover .ttl {
+    color: var(--accent);
+  }
   .article-nav .next {
     text-align: right;
+  }
+  @media (max-width: 600px) {
+    .article-nav {
+      flex-direction: column;
+      gap: 22px;
+    }
+    .article-nav .next {
+      text-align: left;
+    }
+    /* A missing neighbour shouldn't reserve vertical space when stacked. */
+    .article-nav .slot {
+      display: none;
+    }
   }
 </style>
