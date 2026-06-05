@@ -45,11 +45,11 @@ This project replaces it with a small, self-hosted, family-scale travel blog on 
 
 ## Reader experience
 
-- **Landing**: hero teaser card of the latest post + grid of older posts + explicit `[Map view]` and `[All posts]` links.
-- **Map page**: Leaflet + OSM tiles, one pin per post; click pin → post; a Reise filter narrows the map to a single trip.
-- **Archive**: accordion grouped by Reise / Land / Jahr (toggle), newest first.
+- **Landing**: a single centered editorial hero of the latest post (eyebrow, title, lede, "Weiterlesen" button, wide print) + grid of older posts + one centered "Alle Reisen im Archiv" button.
+- **Map page**: Leaflet + OSM tiles, one pin per post; click pin → post (text-only popup, no image preview); a Reise filter narrows the map to a single trip.
+- **Archive**: multi-open accordion grouped by Reise / Land / Jahr (toggle), newest first — closed by default, open-state + grouping persisted across visits, bulk expand/collapse, and a `?reise=` deep-link from a post's Reise link.
 - **Search**: filterable — text + country + trip + date range.
-- **Post page**: blocks rendered in order, minimal chrome, image-first.
+- **Post page**: blocks rendered in order, minimal chrome, image-first — portrait images shown narrow/centered and uncropped, galleries as a no-crop masonry, with bidirectional prev/next neighbours and a link back to the post's Reise.
 - **Language**: German UI and content.
 
 ## Editor experience

@@ -53,7 +53,7 @@ which are ObjectIds on the admin endpoints.
 |---|---|---|
 | GET | `/api/public/posts` | Published posts, paginated (full DTOs). |
 | GET | `/api/public/posts/heads` | Published post **heads** (no `blocks`), newest first; `?limit`. Feeds list views (landing, archive, next-post). → `{ posts: PublicPostHead[] }`. |
-| GET | `/api/public/posts/:shortId` | Single published post (`404` for drafts). |
+| GET | `/api/public/posts/:shortId` | Single published post (`404` for drafts). Carries an `images` sidecar map `{ [imageId]: { width, height } }` for the image/gallery blocks it references — server-provided dimensions so the reader renders orientation-aware (portrait) singles and shortest-column masonry galleries with no layout shift. List/search responses omit it. |
 | GET | `/api/public/search` | `searchQuerySchema`: folded substring + country + trip + date range. |
 | GET | `/api/public/facets` | `{ countries, months }` for the Suche filters — server-computed so the options stay complete past the first page. |
 | GET | `/api/public/trips` | Trips that have ≥1 published post. |

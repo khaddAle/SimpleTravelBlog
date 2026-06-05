@@ -412,6 +412,51 @@ per commit; e2e is not in the CI gate (see `project_travelblog-build-state.md`).
 - [ ] **Stage 7 — Release to dev (`0.8.0`).** Pending: `/travelblog-release` once
       the user gives the explicit go (outward-facing). Prod promotion out of scope.
 
+### Round 5 — Fernweh Usability R2 (reader delta) — DONE 2026-06-05 (TDD)
+
+Focused delta on the shipped Fernweh reader design (handoff in
+`design/design_handoff_fernweh_usability_r2/`); plan in memory
+`project_fernweh-usability-r2-plan.md`. One surface at a time, RED→GREEN,
+German-only, screenshot-verified per surface (`.preview/shoot.mjs`).
+
+- [X] **§0 — Image-dimension sidecar (`46b398e`).** `postDtoSchema.images`
+      (`Record<imageId, { width, height }>`, optional); `imageIdsInBlocks` helper +
+      `toPostDto` 3rd param in `dto.ts`; the public single-post route populates it
+      from the `Image` docs (`shortId`/`width`/`height` projection). List/search omit
+      it — server-provided dims, no client `naturalWidth`, no layout shift.
+- [X] **§1 — Archive multi-open + persisted (`586ae7f`).** New runes store
+      `lib/archiveState.svelte.ts` (sessionStorage `fw-archive-v1`, zod-validated
+      hydrate, `$effect.root` persist; toggle/expandAll/collapseAll/setMode/openGroup).
+      `Archive.svelte`: multi-open, closed by default, 2px-ink header + rotating SVG
+      chevron, "Alle aus-/einklappen" bulk buttons (disabled-when-noop), and a
+      `?reise=<tripId>` hash deep-link (opens that trip in Reise mode).
+- [X] **§2 — Orientation-aware images + masonry (`5741b06`).** `lib/masonry.ts`
+      (`packMasonry` shortest-column order-preserving, `isPortrait` ratio<0.95).
+      Portrait body images → narrow/centered at natural ratio (global `.photo`/`.frame`
+      + inline `aspect-ratio`, no `Photo.svelte` change); galleries → masonry
+      (3/2/1 columns by `matchMedia`); `BlockRenderer`/`Post` thread `post.images`.
+      Lightbox unchanged (tiles keep original indices).
+- [X] **§3 — Bidirectional post nav + Reise link (`dab5a41`).** `Post.svelte` adds
+      `prevPost` (newer) beside `nextPost` (older); two-slot footer (`Vorheriger`/
+      `Nächster`, empty-slot spacer, stacks ≤600px). Heads + `publicTrips` fetched
+      best-effort via `Promise.allSettled`; a `Reise: <name>` `.link-accent` →
+      `#/archiv?reise=<tripId>` when the trip resolves.
+- [X] **§4 — Centered editorial landing hero (`83b29f9`).** Single centered column
+      (eyebrow `center` w/ both-side accent rules, title, 40ch lede, `·`-meta,
+      `.btn.primary` "Weiterlesen", r169 print max-940px); inline section-head archive
+      link replaced by one centered `.btn` "Alle Reisen im Archiv →" under the grid.
+      Additive `.eyebrow.center` modifier in `app.css`.
+- [X] **§5 — Map popup regression guard (`58a3cf9`).** Verify-only: the Karte popup
+      is text-only (`MapPage.svelte:77-79`); added a `MapPage.test.ts` assertion that
+      every bound popup HTML contains no `<img>`. No code change.
+- [X] **Docs (this commit).** `docs/api.md` (single-post `images` sidecar),
+      `docs/architecture.md` (persisted multi-open archive + `?reise=` + masonry +
+      bidirectional nav + centered hero), `docs/target-picture.md` (reader surfaces),
+      and this log.
+- [ ] **Release to dev (`0.9.0`).** Pending `/travelblog-release` on the user's
+      explicit go (outward-facing). Minor bump (additive reader features); prod
+      promotion out of scope (prod stays `0.7.0`).
+
 ### Small — pure frontend, isolated
 
 - [X] **Show selected-image count in the image picker.** `ImagePicker.svelte`

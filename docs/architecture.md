@@ -233,8 +233,20 @@ flowchart TD
   URL is swapped to its edit route via the router's `replace`.
 - **List views** — reader lists (Landing, Archive, next-post lookup) and the
   admin "Beiträge" page consume lightweight head/summary projections (no
-  `blocks`). Archive is an accordion grouping the heads by **Reise / Land / Jahr**
-  client-side (one request, instant regroup); MapPage filters markers by Reise.
+  `blocks`). Archive is a **multi-open** accordion grouping the heads by
+  **Reise / Land / Jahr** client-side (one request, instant regroup), closed by
+  default, with per-mode open-state + the active grouping persisted to
+  `sessionStorage` (`fw-archive-v1`, zod-validated on hydrate; `lib/archiveState.svelte.ts`)
+  and bulk expand/collapse; a `?reise=<tripId>` hash query deep-links straight to
+  a trip (opened in Reise mode). The single Post page sourced that link
+  (`Reise: <name>`) and offers **bidirectional** prev/next neighbours; MapPage
+  filters markers by Reise. Landing leads with a single centered editorial hero.
+- **Reader images** — the single-post `images` dimension sidecar drives
+  orientation-aware rendering: portrait body images render narrow/centered at
+  their natural ratio (never cropped), and galleries pack into an order-preserving
+  shortest-column **masonry** (`lib/masonry.ts`, reactive 3/2/1 columns by
+  breakpoint). Both reuse `Photo`'s global `.photo`/`.frame` classes via inline
+  `aspect-ratio` rather than modifying the framed `Photo` primitive.
 - **Routing/guard** — admin routes redirect to `/login` when unauthenticated;
   the editor reaches images/galleries through a Promise-based picker bridge.
   `lib/navGuard.ts` confirms in-app departures while edits aren't yet autosaved.
