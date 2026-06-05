@@ -74,6 +74,12 @@ describe('Landing', () => {
     expect(archive?.textContent).toContain('Alle Reisen im Archiv');
   });
 
+  it('requests ten heads — one hero plus a full 3×3 grid, no trailing lonely post', async () => {
+    const spy = vi.spyOn(api, 'publicPostHeads').mockResolvedValue([]);
+    render(Landing);
+    expect(spy).toHaveBeenCalledWith(10);
+  });
+
   it('hides the grid section when only the hero post exists', async () => {
     vi.spyOn(api, 'publicPostHeads').mockResolvedValue([post('p1', 'Einsam')]);
     render(Landing);

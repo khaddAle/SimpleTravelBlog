@@ -22,7 +22,8 @@
 
   onMount(async () => {
     try {
-      posts = await api.publicPostHeads(12);
+      // Ten posts total: one hero teaser + a clean 3×3 grid of the rest.
+      posts = await api.publicPostHeads(10);
     } catch {
       error = true;
     } finally {
