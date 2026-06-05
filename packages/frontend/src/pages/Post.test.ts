@@ -157,6 +157,27 @@ describe('Post', () => {
     expect(screen.queryByText(/^Reise:/)).toBeNull();
   });
 
+  it('reloads the article when the route param changes (post → post nav)', async () => {
+    // svelte-spa-router keeps this component mounted across /beitrag/:id changes
+    // and only swaps `params`, so the load must react to params — not onMount.
+    vi.spyOn(api, 'publicPost').mockImplementation(async (id) => (id === 'p1' ? full : older));
+    vi.spyOn(api, 'publicPostHeads').mockResolvedValue(heads(full, older));
+    stubTrips();
+
+    const { rerender } = render(Post, { params: { id: 'p1' } });
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Drei Tage in den Dolomiten' }),
+    ).toBeInTheDocument();
+
+    await rerender({ params: { id: 'p2' } });
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Morgenlicht über Hallstatt' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { level: 1, name: 'Drei Tage in den Dolomiten' }),
+    ).toBeNull();
+  });
+
   it('shows a not-found message on 404', async () => {
     vi.spyOn(api, 'publicPost').mockRejectedValue(new ApiError(404, 'post not found'));
     render(Post, { params: { id: 'x' } });

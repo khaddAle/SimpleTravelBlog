@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import type { PostDto, PublicPostHead } from '@stb/shared';
   import { api, ApiError } from '../lib/api.js';
   import { formatDate } from '../lib/dates.js';
@@ -22,30 +21,50 @@
   // The lead image is the post's first image block — it bleeds wide at r169.
   const leadIndex = $derived(post ? post.blocks.findIndex((b) => b.type === 'image') : -1);
 
-  onMount(async () => {
+  // svelte-spa-router keeps this component mounted across /beitrag/:id changes and
+  // only swaps `params`, so the load is driven by an effect on `params.id` (not a
+  // one-shot onMount) — otherwise the prev/next links change the URL but never
+  // reload the article. The captured `id` guards against a stale in-flight load
+  // clobbering a newer one when the reader clicks through quickly.
+  async function load(id: string): Promise<void> {
+    status = 'loading';
+    post = null;
+    prevPost = null;
+    nextPost = null;
+    tripName = null;
+    let loaded: PostDto;
     try {
-      post = await api.publicPost(params.id);
-      status = 'ok';
+      loaded = await api.publicPost(id);
     } catch (err) {
+      if (params.id !== id) return;
       status = err instanceof ApiError && err.status === 404 ? 'notfound' : 'error';
       return;
     }
+    if (params.id !== id) return;
+    post = loaded;
+    status = 'ok';
     // Neighbour links and the Reise source link are niceties — never let a list
     // failure break the article. allSettled keeps each independent.
     const [headsResult, tripsResult] = await Promise.allSettled([
       api.publicPostHeads(),
       api.publicTrips(),
     ]);
+    if (params.id !== id) return;
     if (headsResult.status === 'fulfilled') {
       const heads = headsResult.value;
-      const here = heads.findIndex((p) => p.id === params.id);
-      if (here > 0) prevPost = heads[here - 1] ?? null;
-      if (here >= 0 && here + 1 < heads.length) nextPost = heads[here + 1] ?? null;
+      const here = heads.findIndex((p) => p.id === id);
+      prevPost = here > 0 ? (heads[here - 1] ?? null) : null;
+      nextPost = here >= 0 && here + 1 < heads.length ? (heads[here + 1] ?? null) : null;
     }
-    const tripId = post.tripId;
-    if (tripsResult.status === 'fulfilled' && tripId) {
-      tripName = tripsResult.value.find((t) => t.id === tripId)?.name ?? null;
+    if (tripsResult.status === 'fulfilled' && loaded.tripId) {
+      tripName = tripsResult.value.find((t) => t.id === loaded.tripId)?.name ?? null;
     }
+  }
+
+  $effect(() => {
+    void load(params.id);
+    // The component isn't remounted on a post→post nav, so reset the scroll.
+    window.scrollTo({ top: 0 });
   });
 </script>
 
