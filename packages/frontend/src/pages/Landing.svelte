@@ -42,21 +42,20 @@
     <p class="status">Noch keine Beiträge.</p>
   {:else}
     <section class="hero">
-      <div>
-        <p class="eyebrow">Neuester Beitrag</p>
-        <h1 class="h-display">{hero.title}</h1>
-        {#if hero.subtitle}
-          <p class="lede stack-24 hero-lede">{hero.subtitle}</p>
-        {/if}
-        <p class="meta stack-32">
-          <b>{hero.placeName}, {countryName(hero.country)}</b> &nbsp; {formatDate(hero.postDate)}
-        </p>
-        <a class="link-arrow hero-cta" href={`#/beitrag/${hero.id}`}>
-          Weiterlesen <span class="arr">→</span>
-        </a>
-      </div>
+      <p class="eyebrow center">Neuester Beitrag</p>
+      <h1 class="h-display">{hero.title}</h1>
+      {#if hero.subtitle}
+        <p class="lede stack-24 hero-lede">{hero.subtitle}</p>
+      {/if}
+      <p class="meta stack-24">
+        <b>{hero.placeName}, {countryName(hero.country)}</b><span class="sep">·</span
+        >{formatDate(hero.postDate)}
+      </p>
+      <a class="btn primary hero-cta" href={`#/beitrag/${hero.id}`}>
+        Weiterlesen <span class="arr">→</span>
+      </a>
       <a class="hero-photo" href={`#/beitrag/${hero.id}`} aria-label={hero.title}>
-        <Photo src={heroCover ? imageUrl(heroCover, 'display') : undefined} ratio="r54" />
+        <Photo src={heroCover ? imageUrl(heroCover, 'display') : undefined} ratio="r169" />
       </a>
     </section>
 
@@ -64,12 +63,14 @@
       <section class="more">
         <div class="section-head">
           <h2 class="h-2">Weitere Reisen</h2>
-          <a class="link-accent" href="#/archiv">Alle Beiträge →</a>
         </div>
         <div class="post-grid">
           {#each rest as post (post.id)}
             <PostCard {post} />
           {/each}
+        </div>
+        <div class="more-foot">
+          <a class="btn" href="#/archiv">Alle Reisen im Archiv <span class="arr">→</span></a>
         </div>
       </section>
     {/if}
@@ -79,24 +80,35 @@
 <SiteFooter />
 
 <style>
+  /* A single centered editorial column: eyebrow → title → lede → meta → CTA,
+     then a wide 16:9 print beneath. */
   .hero {
-    display: grid;
-    grid-template-columns: 1fr 1.08fr;
-    gap: 70px;
-    align-items: center;
+    text-align: center;
     padding: 60px 0 30px;
+  }
+  .hero-lede {
+    max-width: 40ch;
+    margin: 18px auto 0;
+  }
+  .hero-cta {
+    margin-top: 28px;
   }
   .hero-photo {
     display: block;
-  }
-  .hero-lede {
-    max-width: 34ch;
-  }
-  .hero-cta {
-    margin-top: 34px;
+    max-width: 940px;
+    margin: 28px auto 0;
   }
   .more {
     margin-top: 70px;
+  }
+  /* The grid's single archive affordance, centered below it. */
+  .more-foot {
+    display: flex;
+    justify-content: center;
+    margin-top: 44px;
+  }
+  .more-foot .arr {
+    color: var(--accent);
   }
   .status {
     padding: 60px 0;
@@ -104,8 +116,6 @@
   }
   @media (max-width: 860px) {
     .hero {
-      grid-template-columns: 1fr;
-      gap: 30px;
       padding: 40px 0 20px;
     }
   }

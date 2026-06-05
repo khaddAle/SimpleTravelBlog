@@ -174,6 +174,18 @@ img {
 .eyebrow.plain::before {
   display: none;
 }
+/* Centered variant: a matching accent rule on the trailing side, so the label
+   sits between two rules (used by the centered Landing hero). */
+.eyebrow.center {
+  justify-content: center;
+}
+.eyebrow.center::after {
+  content: '';
+  width: 22px;
+  height: 1px;
+  background: var(--accent);
+  display: inline-block;
+}
 .h-display {
   font-size: clamp(33px, 6vw, 58px);
   line-height: 1.04;

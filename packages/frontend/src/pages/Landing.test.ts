@@ -37,18 +37,21 @@ describe('Landing', () => {
     expect(screen.getByText('Über Wolkengrenzen')).toBeInTheDocument();
     expect(screen.getByText(/Südtirol, Italien/)).toBeInTheDocument();
 
+    // The hero CTA is now a filled primary button.
     const weiterlesen = screen.getByRole('link', { name: /Weiterlesen/ });
     expect(weiterlesen).toHaveAttribute('href', '#/beitrag/p1');
+    expect(weiterlesen).toHaveClass('btn', 'primary');
 
+    // The centered hero photo is now a wide 16:9 print.
     const heroPhoto = screen.getByRole('link', { name: 'Drei Tage in den Dolomiten' });
     expect(heroPhoto).toHaveAttribute('href', '#/beitrag/p1');
-    expect(heroPhoto.querySelector('.photo .frame.r54 img')).toHaveAttribute(
+    expect(heroPhoto.querySelector('.photo .frame.r169 img')).toHaveAttribute(
       'src',
       '/api/public/images/img1/display',
     );
   });
 
-  it('lists the remaining posts in the "Weitere Reisen" grid', async () => {
+  it('lists the remaining posts and shows the archive button below the grid', async () => {
     vi.spyOn(api, 'publicPostHeads').mockResolvedValue([
       post('p1', 'Dolomiten'),
       post('p2', 'Hallstatt'),
@@ -60,9 +63,15 @@ describe('Landing', () => {
     expect(screen.getByRole('link', { name: /Hallstatt/ })).toHaveAttribute('href', '#/beitrag/p2');
     expect(screen.getByRole('link', { name: /Bergen/ })).toHaveAttribute('href', '#/beitrag/p3');
 
-    const moreLink = container.querySelector('.section-head a');
-    expect(moreLink).toHaveAttribute('href', '#/archiv');
-    expect(moreLink?.textContent).toContain('Alle Beiträge');
+    // The inline "Alle Beiträge →" link is gone from the section head.
+    expect(container.querySelector('.section-head a')).toBeNull();
+
+    // The only archive affordance is a centered button directly under the grid.
+    const archive = container.querySelector('.post-grid + .more-foot a');
+    expect(archive).not.toBeNull();
+    expect(archive).toHaveClass('btn');
+    expect(archive).toHaveAttribute('href', '#/archiv');
+    expect(archive?.textContent).toContain('Alle Reisen im Archiv');
   });
 
   it('hides the grid section when only the hero post exists', async () => {
