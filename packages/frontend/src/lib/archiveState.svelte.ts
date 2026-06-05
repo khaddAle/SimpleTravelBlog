@@ -32,7 +32,7 @@ function defaults(): Persisted {
 
 /** Read + validate the persisted snapshot; any failure → fresh defaults. */
 function hydrate(): Persisted {
-  let raw: string | null = null;
+  let raw: string | null;
   try {
     raw = sessionStorage.getItem(ARCHIVE_STORAGE_KEY);
   } catch {
