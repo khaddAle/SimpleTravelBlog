@@ -3,6 +3,7 @@
   import type { PublicPostHead, TripDto } from '@stb/shared';
   import { api } from '../lib/api.js';
   import { groupBy, type GroupMode, type ArchiveGroup } from '../lib/archive.js';
+  import { archiveState } from '../lib/archiveState.svelte.js';
   import { imageUrl } from '../lib/images.js';
   import { formatDate } from '../lib/dates.js';
   import { countryName } from '../lib/countries.js';
@@ -19,22 +20,17 @@
   let posts = $state<PublicPostHead[]>([]);
   let trips = $state<TripDto[]>([]);
   let loading = $state(true);
-  let mode = $state<GroupMode>('reise');
-  let openKey = $state<string | null>(null);
 
-  // All heads are pulled once; switching mode is a pure client-side regroup.
-  const groups = $derived(groupBy(mode, posts, trips));
+  // Grouping mode + open state live in the persisted store, so they survive a
+  // round-trip to a post and back. All heads are pulled once; switching mode is a
+  // pure client-side regroup.
+  const groups = $derived(groupBy(archiveState.mode, posts, trips));
+  const openKeys = $derived(archiveState.openByMode[archiveState.mode]);
+  const allKeys = $derived(groups.map((g) => g.key));
+  const openCount = $derived(allKeys.filter((k) => openKeys.includes(k)).length);
 
-  // Keep exactly one group open: when the grouping changes (mode switch or load)
-  // and the open key no longer exists, fall back to the top group.
-  $effect(() => {
-    if (!groups.some((g) => g.key === openKey)) {
-      openKey = groups[0]?.key ?? null;
-    }
-  });
-
-  function toggle(key: string): void {
-    openKey = openKey === key ? null : key;
+  function isOpen(key: string): boolean {
+    return openKeys.includes(key);
   }
 
   function thumb(post: PublicPostHead): string | undefined {
@@ -46,7 +42,20 @@
     return `${n} ${n === 1 ? 'Beitrag' : 'Beiträge'}`;
   }
 
+  /** `#/archiv?reise=<tripId>` deep-link → open that trip in reise mode. */
+  function reiseFromHash(): string | null {
+    const hash = window.location.hash;
+    const qi = hash.indexOf('?');
+    if (qi < 0) return null;
+    return new URLSearchParams(hash.slice(qi + 1)).get('reise');
+  }
+
   onMount(async () => {
+    const reise = reiseFromHash();
+    if (reise) {
+      archiveState.setMode('reise');
+      archiveState.openGroup('reise', reise);
+    }
     try {
       const [heads, loadedTrips] = await Promise.all([api.publicPostHeads(), api.publicTrips()]);
       posts = heads;
@@ -64,18 +73,38 @@
     <p class="eyebrow">Archiv</p>
     <h1 class="h-page">Alle Beiträge</h1>
     {#if !loading && posts.length > 0}
-      <div class="modes" role="group" aria-label="Gruppierung">
-        {#each MODES as m (m.value)}
+      <div class="controls">
+        <div class="modes" role="group" aria-label="Gruppierung">
+          {#each MODES as m (m.value)}
+            <button
+              type="button"
+              class="mode"
+              class:active={archiveState.mode === m.value}
+              aria-pressed={archiveState.mode === m.value}
+              onclick={() => archiveState.setMode(m.value)}
+            >
+              {m.label}
+            </button>
+          {/each}
+        </div>
+        <div class="bulk">
           <button
             type="button"
-            class="mode"
-            class:active={mode === m.value}
-            aria-pressed={mode === m.value}
-            onclick={() => (mode = m.value)}
+            class="btn"
+            disabled={openCount === allKeys.length}
+            onclick={() => archiveState.expandAll(archiveState.mode, allKeys)}
           >
-            {m.label}
+            Alle ausklappen
           </button>
-        {/each}
+          <button
+            type="button"
+            class="btn"
+            disabled={openCount === 0}
+            onclick={() => archiveState.collapseAll(archiveState.mode)}
+          >
+            Alle einklappen
+          </button>
+        </div>
       </div>
     {/if}
   </div>
@@ -87,13 +116,26 @@
   {:else}
     <div class="accordion">
       {#each groups as group (group.key)}
-        {@const open = openKey === group.key}
+        {@const open = isOpen(group.key)}
         <section class="group" class:open>
           <h2 class="group-head">
-            <button type="button" aria-expanded={open} onclick={() => toggle(group.key)}>
+            <button
+              type="button"
+              aria-expanded={open}
+              onclick={() => archiveState.toggle(archiveState.mode, group.key)}
+            >
               <span class="label">{group.label}</span>
               <span class="count">{count(group)}</span>
-              <span class="chev" aria-hidden="true">{open ? '▾' : '▸'}</span>
+              <svg
+                class="chev"
+                class:open
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+              >
+                <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" />
+              </svg>
             </button>
           </h2>
           {#if open}
@@ -123,9 +165,25 @@
   .arch-intro {
     padding: 48px 0 8px;
   }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 22px;
+  }
+  .bulk {
+    display: inline-flex;
+    gap: 10px;
+  }
+  .bulk .btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+    border-color: var(--line);
+  }
   .modes {
     display: inline-flex;
-    margin-top: 22px;
     border: 1px solid var(--line);
     border-radius: 9px;
     overflow: hidden;
@@ -161,32 +219,32 @@
   }
   .accordion {
     margin-top: 36px;
-    border-top: 1px solid var(--line);
   }
-  .group {
-    border-bottom: 1px solid var(--line);
-  }
+  /* The header's 2px --ink bottom border is the row divider between groups. */
   .group-head {
     margin: 0;
   }
   .group-head button {
     width: 100%;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 14px;
     font: inherit;
     background: transparent;
     border: 0;
-    padding: 20px 4px;
+    border-bottom: 2px solid var(--ink);
+    padding: 18px 4px;
     cursor: pointer;
     text-align: left;
   }
   .group-head .label {
-    font-size: 26px;
+    font-size: 19px;
     font-weight: 700;
-    letter-spacing: -0.6px;
+    letter-spacing: -0.4px;
     color: var(--ink);
+    transition: color 0.15s;
   }
+  .group-head button:hover .label,
   .group.open .group-head .label {
     color: var(--accent);
   }
@@ -197,8 +255,13 @@
   }
   .group-head .chev {
     margin-left: auto;
-    font-size: 14px;
-    color: var(--faint);
+    color: var(--ink);
+    /* Closed points right; open points down. */
+    transform: rotate(-90deg);
+    transition: transform 0.2s ease;
+  }
+  .group-head .chev.open {
+    transform: rotate(0deg);
   }
   .group-body {
     padding-bottom: 14px;
@@ -256,9 +319,6 @@
     transform: translateX(3px);
   }
   @media (max-width: 600px) {
-    .group-head .label {
-      font-size: 22px;
-    }
     .arch-row {
       gap: 14px;
     }

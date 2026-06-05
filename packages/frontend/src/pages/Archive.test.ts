@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import type { PublicPostHead } from '@stb/shared';
 import { api } from '../lib/api.js';
+import { archiveState } from '../lib/archiveState.svelte.js';
 import Archive from './Archive.svelte';
 
 function post(id: string, over: Partial<PublicPostHead> = {}): PublicPostHead {
@@ -31,6 +32,17 @@ const hallstatt = post('b', {
   tripId: 't2',
 });
 
+// Reset the persisted store and the deep-link hash before every test so each
+// starts from the "first visit" baseline (all closed, reise mode).
+beforeEach(() => {
+  sessionStorage.clear();
+  window.location.hash = '#/archiv';
+  archiveState.setMode('reise');
+  archiveState.collapseAll('reise');
+  archiveState.collapseAll('land');
+  archiveState.collapseAll('jahr');
+});
+
 afterEach(() => vi.restoreAllMocks());
 
 function mock(heads: PublicPostHead[]) {
@@ -54,33 +66,107 @@ describe('Archive', () => {
     expect(screen.getByRole('button', { name: 'Nach Jahr' })).toBeInTheDocument();
   });
 
-  it('groups by trip by default with the newest group open', async () => {
+  it('groups by trip with every group closed on first visit', async () => {
     mock([dolomiten, hallstatt]);
     render(Archive);
 
-    // Both group headers render; the newest (Alpen) is open and shows its post.
+    // Both group headers render but neither group's posts are shown.
     expect(await screen.findByRole('button', { name: /Alpen/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Nordsee/ })).toBeInTheDocument();
-    expect(
-      screen.getByRole('link', { name: /Drei Tage in den Dolomiten/ }),
-    ).toHaveAttribute('href', '#/beitrag/a');
-    // The collapsed Nordsee group's post is not rendered.
+    expect(screen.queryByRole('link', { name: /Drei Tage in den Dolomiten/ })).toBeNull();
     expect(screen.queryByRole('link', { name: /Morgenlicht über Hallstatt/ })).toBeNull();
   });
 
-  it('opens one group at a time (accordion)', async () => {
+  it('keeps multiple groups open at once (multi-open)', async () => {
     const user = userEvent.setup();
     mock([dolomiten, hallstatt]);
     render(Archive);
 
-    await screen.findByRole('link', { name: /Drei Tage in den Dolomiten/ });
+    await user.click(await screen.findByRole('button', { name: /Alpen/ }));
     await user.click(screen.getByRole('button', { name: /Nordsee/ }));
 
+    // Both stay open.
+    expect(
+      await screen.findByRole('link', { name: /Drei Tage in den Dolomiten/ }),
+    ).toHaveAttribute('href', '#/beitrag/a');
+    expect(
+      screen.getByRole('link', { name: /Morgenlicht über Hallstatt/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('rotates the chevron of an open group', async () => {
+    const user = userEvent.setup();
+    mock([dolomiten, hallstatt]);
+    const { container } = render(Archive);
+
+    await screen.findByRole('button', { name: /Alpen/ });
+    expect(container.querySelectorAll('.chev.open')).toHaveLength(0);
+
+    await user.click(screen.getByRole('button', { name: /Alpen/ }));
+    expect(container.querySelectorAll('.chev.open')).toHaveLength(1);
+  });
+
+  it('toggles the bulk ausklappen/einklappen disabled state with open count', async () => {
+    const user = userEvent.setup();
+    mock([dolomiten, hallstatt]);
+    render(Archive);
+
+    const aus = await screen.findByRole('button', { name: 'Alle ausklappen' });
+    const ein = screen.getByRole('button', { name: 'Alle einklappen' });
+
+    // None open → einklappen disabled, ausklappen enabled.
+    expect(ein).toBeDisabled();
+    expect(aus).toBeEnabled();
+
+    // One of two open → mixed → both enabled.
+    await user.click(screen.getByRole('button', { name: /Alpen/ }));
+    expect(aus).toBeEnabled();
+    expect(ein).toBeEnabled();
+
+    // All open via the bulk control → ausklappen disabled.
+    await user.click(aus);
+    expect(aus).toBeDisabled();
+    expect(ein).toBeEnabled();
+    expect(screen.getByRole('link', { name: /Morgenlicht über Hallstatt/ })).toBeInTheDocument();
+
+    // Collapse all → einklappen disabled again.
+    await user.click(ein);
+    expect(ein).toBeDisabled();
+    expect(screen.queryByRole('link', { name: /Drei Tage in den Dolomiten/ })).toBeNull();
+  });
+
+  it('restores the mode and open groups after a remount', async () => {
+    const user = userEvent.setup();
+    mock([dolomiten, hallstatt]);
+    const first = render(Archive);
+
+    await user.click(await screen.findByRole('button', { name: /Nordsee/ }));
     expect(
       await screen.findByRole('link', { name: /Morgenlicht über Hallstatt/ }),
     ).toBeInTheDocument();
-    // Opening Nordsee closed Alpen.
-    expect(screen.queryByRole('link', { name: /Drei Tage in den Dolomiten/ })).toBeNull();
+    first.unmount();
+
+    // Remounting (e.g. after visiting a post and navigating back) keeps Nordsee open.
+    mock([dolomiten, hallstatt]);
+    render(Archive);
+    expect(
+      await screen.findByRole('link', { name: /Morgenlicht über Hallstatt/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('opens the deep-linked reise in reise mode (?reise=)', async () => {
+    window.location.hash = '#/archiv?reise=t2';
+    mock([dolomiten, hallstatt]);
+    render(Archive);
+
+    // t2 is Nordsee — its post renders without any clicks, in reise mode.
+    expect(
+      await screen.findByRole('link', { name: /Morgenlicht über Hallstatt/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Nach Reise' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
   });
 
   it('regroups by country on mode switch without a refetch', async () => {
@@ -124,9 +210,11 @@ describe('Archive', () => {
   });
 
   it('renders a post row with thumbnail, place and date', async () => {
+    const user = userEvent.setup();
     mock([dolomiten]);
     const { container } = render(Archive);
 
+    await user.click(await screen.findByRole('button', { name: /Alpen/ }));
     const row = await screen.findByRole('link', { name: /Drei Tage in den Dolomiten/ });
     expect(row).toHaveAttribute('href', '#/beitrag/a');
     expect(screen.getByText('Südtirol, Italien')).toBeInTheDocument();
