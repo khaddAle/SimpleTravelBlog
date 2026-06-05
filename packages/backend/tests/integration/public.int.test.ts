@@ -5,6 +5,7 @@ import type { Redis } from 'ioredis';
 import { useTestDatabase } from '../db.js';
 import { buildTestApp, authedAgent, type AuthedAgent } from '../helpers.js';
 import { Post } from '../../src/db/models/Post.js';
+import { Image } from '../../src/db/models/Image.js';
 
 describe('public reader API integration', () => {
   useTestDatabase();
@@ -105,6 +106,65 @@ describe('public reader API integration', () => {
       200,
     );
     expect((await request(app.server).get(`/api/public/posts/${draft}`)).status).toBe(404);
+  });
+
+  it('attaches the image-dimension sidecar to the single post only', async () => {
+    // Seed two images the post references (one in an image block, one in a
+    // gallery), plus an unreferenced image that must not leak into the map.
+    await Image.create([
+      {
+        shortId: 'imgone',
+        originalFilename: 'a.jpg',
+        mime: 'image/jpeg',
+        displayKey: 'd/a',
+        thumbKey: 't/a',
+        width: 800,
+        height: 1200,
+        uploaderId: auth.userId,
+      },
+      {
+        shortId: 'imgtwo',
+        originalFilename: 'b.jpg',
+        mime: 'image/jpeg',
+        displayKey: 'd/b',
+        thumbKey: 't/b',
+        width: 1600,
+        height: 900,
+        uploaderId: auth.userId,
+      },
+      {
+        shortId: 'imgunref',
+        originalFilename: 'c.jpg',
+        mime: 'image/jpeg',
+        displayKey: 'd/c',
+        thumbKey: 't/c',
+        width: 100,
+        height: 100,
+        uploaderId: auth.userId,
+      },
+    ]);
+    const id = await createPublished({
+      blocks: [
+        { type: 'paragraph', text: 'Aufstieg' },
+        { type: 'image', imageId: 'imgone' },
+        { type: 'gallery', imageIds: ['imgtwo'] },
+      ],
+    });
+
+    const single = await request(app.server).get(`/api/public/posts/${id}`);
+    expect(single.status).toBe(200);
+    expect(single.body.post.images).toEqual({
+      imgone: { width: 800, height: 1200 },
+      imgtwo: { width: 1600, height: 900 },
+    });
+    // The unreferenced image is not in the sidecar.
+    expect(single.body.post.images.imgunref).toBeUndefined();
+
+    // List and search responses never carry the sidecar.
+    const list = await request(app.server).get('/api/public/posts');
+    expect(list.body.posts[0].images).toBeUndefined();
+    const search = await request(app.server).get('/api/public/search?q=aufstieg');
+    expect(search.body.posts[0].images).toBeUndefined();
   });
 
   it('includes the trip shortId on public posts (list + single)', async () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import type { Block } from '@stb/shared';
 import {
   toPostDto,
   toPublicPostHead,
@@ -8,6 +9,7 @@ import {
   toUserListItem,
   toSettingsDto,
   imageVariantUrl,
+  imageIdsInBlocks,
   DEFAULT_SETTINGS,
   type PostLike,
 } from './dto.js';
@@ -125,6 +127,33 @@ describe('toPostDto', () => {
     expect(dto.draft?.subtitle).toBeUndefined();
     expect(dto.draft?.tripId).toBeUndefined();
     expect(dto.draft?.coverImageId).toBeUndefined();
+  });
+
+  it('omits the images sidecar when no map is passed', () => {
+    expect(toPostDto(basePost).images).toBeUndefined();
+  });
+
+  it('includes the images sidecar (dimension map) when passed', () => {
+    const images = { img1: { width: 800, height: 1200 }, img2: { width: 1600, height: 900 } };
+    const dto = toPostDto(basePost, undefined, images);
+    expect(dto.images).toEqual(images);
+  });
+});
+
+describe('imageIdsInBlocks', () => {
+  it('collects image and gallery ids, de-duplicated', () => {
+    const blocks: Block[] = [
+      { type: 'paragraph', text: 'hallo' },
+      { type: 'image', imageId: 'a' },
+      { type: 'gallery', imageIds: ['b', 'c', 'a'] },
+      { type: 'image', imageId: 'b' },
+      { type: 'divider' },
+    ];
+    expect(imageIdsInBlocks(blocks).sort()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('returns an empty array when there are no image-bearing blocks', () => {
+    expect(imageIdsInBlocks([{ type: 'paragraph', text: 'x' }])).toEqual([]);
   });
 });
 

@@ -14,8 +14,11 @@ import {
   toPublicPostHead,
   toTripDto,
   toSettingsDto,
+  imageIdsInBlocks,
   DEFAULT_SETTINGS,
+  type ImageDims,
 } from '../dto.js';
+import type { Block } from '@stb/shared';
 import { buildPublishedSearch } from '../posts/search.js';
 import { tripObjectIdForShortId, tripShortIdsByObjectId } from '../posts/trips.js';
 import type { RouteContext } from './context.js';
@@ -104,8 +107,28 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: RouteContext): v
     const tripMap = post.tripId
       ? await tripShortIdsByObjectId([String(post.tripId)])
       : undefined;
+
+    // Sidecar dimension map for the images this post references, so the reader
+    // renders natural ratios first-paint without layout shift.
+    const ids = imageIdsInBlocks((post.blocks ?? []) as Block[]);
+    let images: Record<string, ImageDims> | undefined;
+    if (ids.length > 0) {
+      const imgs = await Image.find(
+        { shortId: { $in: ids } },
+        { shortId: 1, width: 1, height: 1 },
+      ).lean();
+      if (imgs.length > 0) {
+        images = {};
+        for (const i of imgs) images[i.shortId] = { width: i.width, height: i.height };
+      }
+    }
+
     return {
-      post: toPostDto(post, post.tripId ? tripMap?.get(String(post.tripId)) : undefined),
+      post: toPostDto(
+        post,
+        post.tripId ? tripMap?.get(String(post.tripId)) : undefined,
+        images,
+      ),
     };
   });
 

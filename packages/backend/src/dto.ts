@@ -69,7 +69,28 @@ export function toPostDraft(d: PostDraftLike): PostDraft {
   };
 }
 
-export function toPostDto(p: PostLike, tripShortId?: string): PostDto {
+/** Natural pixel dimensions of an image, keyed by imageId in the sidecar map. */
+export type ImageDims = { width: number; height: number };
+
+/**
+ * Every imageId referenced by a block list (image → `imageId`, gallery →
+ * `imageIds`), de-duplicated. Pure; used to collect the ids whose dimensions the
+ * public single-post route ships in the `images` sidecar.
+ */
+export function imageIdsInBlocks(blocks: Block[]): string[] {
+  const seen = new Set<string>();
+  for (const b of blocks) {
+    if (b.type === 'image') seen.add(b.imageId);
+    else if (b.type === 'gallery') for (const id of b.imageIds) seen.add(id);
+  }
+  return [...seen];
+}
+
+export function toPostDto(
+  p: PostLike,
+  tripShortId?: string,
+  images?: Record<string, ImageDims>,
+): PostDto {
   return {
     id: p.shortId,
     title: p.title,
@@ -82,6 +103,7 @@ export function toPostDto(p: PostLike, tripShortId?: string): PostDto {
     lng: p.lng,
     ...(tripShortId ? { tripId: tripShortId } : {}),
     ...(p.coverImageId ? { coverImageId: p.coverImageId } : {}),
+    ...(images ? { images } : {}),
     status: p.status,
     ...(p.publishedAt ? { publishedAt: p.publishedAt.toISOString() } : {}),
     ...(p.draft ? { draft: toPostDraft(p.draft) } : {}),

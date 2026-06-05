@@ -115,6 +115,16 @@ export const postDtoSchema = z.object({
   lng: lngSchema,
   tripId: z.string().optional(),
   coverImageId: z.string().optional(),
+  // Sidecar map of natural pixel dimensions keyed by imageId, for the image
+  // shortIds this post references. Populated only by the public single-post
+  // route so the reader can render natural ratios SSR/first-paint without layout
+  // shift; list/search/admin responses omit it.
+  images: z
+    .record(
+      z.string(),
+      z.object({ width: z.number().int().positive(), height: z.number().int().positive() }),
+    )
+    .optional(),
   status: postStatusSchema,
   publishedAt: z.string().optional(),
   createdAt: z.string(),
