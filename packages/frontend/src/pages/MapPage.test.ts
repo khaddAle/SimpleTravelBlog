@@ -223,6 +223,28 @@ describe('MapPage', () => {
     expect(screen.queryByLabelText('Reise')).toBeNull();
   });
 
+  it('binds a text-only popup — no image preview on the map (regression)', async () => {
+    vi.spyOn(api, 'publicMap').mockResolvedValue(mapData());
+    render(MapPage);
+    await waitFor(() => expect(L.marker).toHaveBeenCalledTimes(2));
+
+    const markerResults = (
+      L.marker as unknown as {
+        mock: { results: { value: { bindPopup: ReturnType<typeof vi.fn> } }[] };
+      }
+    ).mock.results;
+    // Every popup is title + place only — the Karte never embeds a photo.
+    for (const r of markerResults) {
+      const html = r.value.bindPopup.mock.calls[0]![0] as string;
+      expect(html).not.toMatch(/<img\b/i);
+      expect(html).toContain('map-pop');
+    }
+    // Sanity: the first popup still carries the post title and its place.
+    const first = markerResults[0]!.value.bindPopup.mock.calls[0]![0] as string;
+    expect(first).toContain('Berge');
+    expect(first).toContain('Zugspitze');
+  });
+
   it('falls back to a default view when there are no points', async () => {
     vi.spyOn(api, 'publicMap').mockResolvedValue(mapData({ points: [] }));
     render(MapPage);
