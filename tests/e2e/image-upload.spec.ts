@@ -25,7 +25,13 @@ test('upload an image through the picker and publish a post with it', async ({ p
   await publish(page);
 
   // Reader: the post renders and its image variant is fetchable from storage.
+  // The archive is an accordion (Reise/Land/Jahr), closed by default — switch to
+  // "Nach Land" and open the post's country group before the link is in the DOM.
   await page.goto('/#/archiv');
+  await expect(page.getByRole('heading', { level: 1, name: 'Alle Beiträge' })).toBeVisible();
+  await page.getByRole('button', { name: 'Nach Land' }).click();
+  const land = page.getByRole('button', { name: /Italien/ });
+  if ((await land.getAttribute('aria-expanded')) !== 'true') await land.click();
   await page.getByRole('link', { name: new RegExp(title) }).first().click();
   await expect(page).toHaveURL(/#\/beitrag\//);
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
