@@ -86,6 +86,27 @@ describe('ImagePicker browsing', () => {
     });
   });
 
+  it('sorts by capture date in both directions', async () => {
+    const user = userEvent.setup();
+    render(ImagePicker, { onSelect: vi.fn(), onCancel: vi.fn() });
+    await screen.findByLabelText('alpha.jpg');
+    const select = screen.getByLabelText('Sortierung');
+
+    await user.selectOptions(select, 'taken-newest');
+    await waitFor(() =>
+      expect(api.listImages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sort: 'taken-newest' }),
+      ),
+    );
+
+    await user.selectOptions(select, 'taken-oldest');
+    await waitFor(() =>
+      expect(api.listImages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sort: 'taken-oldest' }),
+      ),
+    );
+  });
+
   it('toggles the orphans-only filter', async () => {
     const user = userEvent.setup();
     render(ImagePicker, { onSelect: vi.fn(), onCancel: vi.fn() });

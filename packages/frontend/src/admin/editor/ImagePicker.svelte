@@ -46,7 +46,9 @@
   let page = $state(1);
   const pageSize = 24;
   let q = $state('');
-  let sort = $state<'newest' | 'oldest' | 'filename'>('newest');
+  let sort = $state<'newest' | 'oldest' | 'filename' | 'taken-newest' | 'taken-oldest'>(
+    'newest',
+  );
   // Props are init-only seeds for this local state; untrack documents that.
   let orphansOnly = $state(untrack(() => initialOrphansOnly));
   let selected = $state<string[]>(untrack(() => [...initialSelected]));
@@ -178,6 +180,8 @@
       <option value="newest">Neueste</option>
       <option value="oldest">Älteste</option>
       <option value="filename">Dateiname</option>
+      <option value="taken-newest">Aufnahme neueste</option>
+      <option value="taken-oldest">Aufnahme älteste</option>
     </select>
     <label class="checkbox">
       <input type="checkbox" bind:checked={orphansOnly} onchange={resetToFirstPage} />

@@ -76,7 +76,12 @@ type, reserves an image shortId, registers an upload channel, and returns `202`
 immediately with `{ uploadId, imageId }`. Transcoding then runs in the
 background: a single sharp re-encode strips all metadata (so EXIF/GPS never
 reach storage), producing a display variant (≤1600px) and a thumbnail (≤400px),
-both WebP. Both objects are written to MinIO, the `Image` document is persisted,
+both WebP. Before stripping, the EXIF capture date (`DateTimeOriginal`) is read
+from the input and persisted as `Image.takenAt` — the *only* metadata retained,
+and only in the database; GPS and everything else still never reach the stored
+objects. `takenAt` drives the picker/library "Aufnahmedatum" sort; images
+uploaded before this (and inputs with no EXIF) have no `takenAt` and sort behind.
+Both objects are written to MinIO, the `Image` document is persisted,
 and a `done` event carrying the image DTO is published. The browser tracks
 progress over a Server-Sent-Events channel; because every channel buffers its
 events, a client that connects after the pipeline finished still replays the

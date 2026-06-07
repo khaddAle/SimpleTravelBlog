@@ -15,7 +15,9 @@
   let page = $state(1);
   const pageSize = 24;
   let q = $state('');
-  let sort = $state<'newest' | 'oldest' | 'filename'>('newest');
+  let sort = $state<'newest' | 'oldest' | 'filename' | 'taken-newest' | 'taken-oldest'>(
+    'newest',
+  );
   let orphansOnly = $state(false);
   let loading = $state(true);
 
@@ -222,6 +224,8 @@
       <option value="newest">Neueste zuerst</option>
       <option value="oldest">Älteste zuerst</option>
       <option value="filename">Name A–Z</option>
+      <option value="taken-newest">Aufnahmedatum (neueste)</option>
+      <option value="taken-oldest">Aufnahmedatum (älteste)</option>
     </select>
     <div class="seg">
       <button type="button" class:on={!orphansOnly} onclick={() => setOrphans(false)}>Alle</button>

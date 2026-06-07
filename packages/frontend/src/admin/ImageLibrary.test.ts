@@ -72,6 +72,24 @@ describe('ImageLibrary', () => {
     );
   });
 
+  it('sorts by capture date in both directions', async () => {
+    const user = userEvent.setup();
+    const list = vi.spyOn(api, 'listImages');
+    render(ImageLibrary);
+    await screen.findByText('alpha.jpg');
+    const select = screen.getByLabelText('Sortierung');
+
+    await user.selectOptions(select, 'taken-newest');
+    await waitFor(() =>
+      expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'taken-newest' })),
+    );
+
+    await user.selectOptions(select, 'taken-oldest');
+    await waitFor(() =>
+      expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'taken-oldest' })),
+    );
+  });
+
   it('filters to orphans via the segment', async () => {
     const user = userEvent.setup();
     const list = vi.spyOn(api, 'listImages');

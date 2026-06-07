@@ -40,7 +40,7 @@ This project replaces it with a small, self-hosted, family-scale travel blog on 
 - **Post**: title, subtitle, ordered list of blocks, post date, country, place name, lat/lng, optional trip reference, draft/published state.
 - **Block types**: Title, Subtitle, Paragraph, Image (with optional caption), Image Gallery, Quote, Divider.
 - **Trip**: just a name. Country/date range derived from member posts.
-- **Image asset**: original is not kept; stored as two WebP variants — display (≤1600 px long edge) and thumbnail (≤400 px). Tracks filename, upload date, uploader, references from posts.
+- **Image asset**: original is not kept; stored as two WebP variants — display (≤1600 px long edge) and thumbnail (≤400 px). Tracks filename, upload date, uploader, references from posts, and the EXIF capture date (`takenAt`, read before metadata is stripped) for the "Aufnahmedatum" sort. The capture date is the only metadata retained, and only in the database — GPS and all other EXIF are still dropped from the stored objects.
 - **URLs**: opaque short IDs, e.g. `/p/a3kf2`. Stable across renames.
 
 ## Reader experience

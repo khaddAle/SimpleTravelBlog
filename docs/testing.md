@@ -40,6 +40,7 @@ Documented exclusions (bootstrap / glue, not meaningfully unit-testable):
 - **S3/MinIO**: `aws-sdk-client-mock` stubs the S3 client; tests assert
   `PutObject` / `DeleteObject` parameters.
 - **Fixtures**: `packages/backend/tests/fixtures/` holds a GPS-tagged JPEG, a
+  capture-date-tagged JPEG (EXIF `DateTimeOriginal`, for the `takenAt` sort), a
   PNG, a HEIC, and the WordPress JSON corpus (`wp-posts.json`, `wp-media.json`).
 - **Frontend components**: the `svelteTesting()` Vite plugin (in
   `packages/frontend/vitest.config.ts`) adds the `browser` resolve condition so
