@@ -61,16 +61,33 @@ describe('SPA static serving', () => {
     expect(res.text).toContain('<div id="app">');
   });
 
+  it('serves index.html with a no-cache header so deploys are picked up', async () => {
+    const res = await request(app.server).get('/');
+    // The app shell must always be revalidated; a stale shell points at
+    // now-deleted hashed bundles → blank page after a deploy.
+    expect(res.headers['cache-control']).toBe('no-cache');
+  });
+
   it('serves real static assets from disk', async () => {
     const res = await request(app.server).get('/assets/app.js');
     expect(res.status).toBe(200);
     expect(res.text).toContain('hello from asset');
   });
 
+  it('serves content-hashed assets as immutable, long-lived', async () => {
+    const res = await request(app.server).get('/assets/app.js');
+    expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+  });
+
   it('falls back to index.html for unknown client routes (GET, non-API)', async () => {
     const res = await request(app.server).get('/archiv/2024');
     expect(res.status).toBe(200);
     expect(res.text).toContain('<div id="app">');
+  });
+
+  it('serves the SPA fallback index.html with no-cache too', async () => {
+    const res = await request(app.server).get('/archiv/2024');
+    expect(res.headers['cache-control']).toBe('no-cache');
   });
 
   it('still serves API/health routes without shadowing them', async () => {
