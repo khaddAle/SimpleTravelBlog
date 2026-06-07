@@ -61,6 +61,7 @@ export function registerImageRoutes(app: FastifyInstance, ctx: RouteContext): vo
         thumbKey,
         width: processed.width,
         height: processed.height,
+        ...(processed.takenAt ? { takenAt: processed.takenAt } : {}),
         uploaderId,
       });
       await progress.publish(uploadId, {
@@ -138,6 +139,26 @@ export function registerImageRoutes(app: FastifyInstance, ctx: RouteContext): vo
     if (orphansOnly) {
       const used = await imageIdsInUse(excludePostId);
       filter.shortId = { $nin: [...used] };
+    }
+
+    // Capture-date sorts run through an aggregation so images without a takenAt
+    // always sort behind the dated ones — in BOTH directions (a plain `.sort`
+    // would scatter the nulls to one end depending on direction). The three
+    // legacy modes keep the simpler find().sort() path.
+    if (sort === 'taken-newest' || sort === 'taken-oldest') {
+      const dir = sort === 'taken-oldest' ? 1 : -1;
+      const [total, images] = await Promise.all([
+        Image.countDocuments(filter),
+        Image.aggregate([
+          { $match: filter },
+          { $addFields: { _missing: { $cond: [{ $ifNull: ['$takenAt', false] }, 0, 1] } } },
+          // Present dates first; createdAt is the tiebreak (and orders the undated tail).
+          { $sort: { _missing: 1, takenAt: dir, createdAt: -1 } },
+          { $skip: (page - 1) * pageSize },
+          { $limit: pageSize },
+        ]),
+      ]);
+      return { images: images.map(toImageDto), page, pageSize, total };
     }
 
     const sortSpec =

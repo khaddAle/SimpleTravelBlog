@@ -9,6 +9,10 @@ const imageSchema = new Schema(
     thumbKey: { type: String, required: true },
     width: { type: Number, required: true, min: 1 },
     height: { type: Number, required: true, min: 1 },
+    // EXIF capture date, extracted at upload before metadata is stripped. Absent
+    // for images uploaded before this was retained (and for inputs with no EXIF);
+    // those sort behind dated ones. Indexed for the capture-date sort modes.
+    takenAt: { type: Date, index: true },
     uploaderId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: { createdAt: true, updatedAt: false } },

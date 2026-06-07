@@ -196,6 +196,9 @@ export const imageDtoSchema = z.object({
   height: z.number().int().positive(),
   displayUrl: z.string(),
   thumbUrl: z.string(),
+  // EXIF capture date (ISO), when the upload carried one. Absent for images
+  // uploaded before capture-date retention and for inputs with no EXIF.
+  takenAt: z.string().optional(),
   createdAt: z.string(),
 });
 export type ImageDto = z.infer<typeof imageDtoSchema>;
@@ -219,7 +222,9 @@ export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
 export const imageListQuerySchema = paginationQuerySchema.extend({
   q: z.string().max(200).optional(),
   orphansOnly: queryBooleanSchema,
-  sort: z.enum(['newest', 'oldest', 'filename']).default('newest'),
+  sort: z
+    .enum(['newest', 'oldest', 'filename', 'taken-newest', 'taken-oldest'])
+    .default('newest'),
   // When the orphan filter is on, discount this post's persisted image
   // references — so the editor's "Nur unbenutzte" picker frees images dropped
   // from the post being edited without exposing ones still used elsewhere.

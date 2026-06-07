@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import sharp from 'sharp';
-import { stripMetadata, hasExif } from './exif.js';
+import { stripMetadata, hasExif, readTakenAt } from './exif.js';
+import { makeJpegWithDateTaken, makePng } from '../../tests/fixtures.js';
 
 async function jpegWithGps(): Promise<Buffer> {
   // A small red square carrying EXIF incl. a GPS latitude tag.
@@ -30,5 +31,17 @@ describe('image EXIF handling', () => {
     const meta = await sharp(out).metadata();
     expect(meta.width).toBe(8);
     expect(meta.height).toBe(8);
+  });
+});
+
+describe('readTakenAt', () => {
+  it('returns the capture date from EXIF DateTimeOriginal', async () => {
+    const takenAt = await readTakenAt(await makeJpegWithDateTaken());
+    // exif-reader parses EXIF datetimes via Date.UTC (timezone-naive).
+    expect(takenAt?.toISOString()).toBe('2026-05-01T10:00:00.000Z');
+  });
+
+  it('returns undefined for an image with no EXIF', async () => {
+    expect(await readTakenAt(await makePng())).toBeUndefined();
   });
 });

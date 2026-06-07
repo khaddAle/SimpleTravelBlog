@@ -10,7 +10,7 @@ import {
   type AuthedAgent,
   type MemoryStorage,
 } from '../helpers.js';
-import { makeJpegWithGps } from '../fixtures.js';
+import { makeJpegWithGps, makeJpegWithDateTaken, makePng } from '../fixtures.js';
 import { hasExif } from '../../src/images/exif.js';
 
 interface SseEvent {
@@ -48,19 +48,27 @@ describe('images integration', () => {
     auth = await authedAgent(app);
   });
 
-  /** Upload an image and drain its SSE channel to completion; returns its id. */
-  async function uploadImage(filename = 'foto.jpg'): Promise<string> {
-    const buf = await makeJpegWithGps();
+  /** Upload a specific buffer and drain its SSE channel; returns the image id. */
+  async function uploadBuffer(
+    buf: Buffer,
+    filename: string,
+    contentType: string,
+  ): Promise<string> {
     const up = await auth.agent
       .post('/api/images/upload')
       .set('x-csrf-token', auth.csrf)
-      .attach('file', buf, { filename, contentType: 'image/jpeg' });
+      .attach('file', buf, { filename, contentType });
     expect(up.status).toBe(202);
 
     const sse = await auth.agent.get(`/api/images/upload/${up.body.uploadId}/progress`);
     const done = parseSse(sse.text).find((e) => e.type === 'done');
     expect(done?.image?.id).toBe(up.body.imageId);
     return up.body.imageId as string;
+  }
+
+  /** Upload an image and drain its SSE channel to completion; returns its id. */
+  async function uploadImage(filename = 'foto.jpg'): Promise<string> {
+    return uploadBuffer(await makeJpegWithGps(), filename, 'image/jpeg');
   }
 
   const postWithImage = (imageId: string) =>
@@ -190,6 +198,33 @@ describe('images integration', () => {
 
     expect((await auth.agent.get('/api/images?sort=oldest')).body.total).toBe(2);
     expect((await auth.agent.get('/api/images?sort=filename')).body.images).toHaveLength(2);
+  });
+
+  it('sorts by capture date, undated images always behind in both directions', async () => {
+    const early = await uploadBuffer(
+      await makeJpegWithDateTaken({ dateTaken: '2026:01:01 00:00:00' }),
+      'early.jpg',
+      'image/jpeg',
+    );
+    const late = await uploadBuffer(
+      await makeJpegWithDateTaken({ dateTaken: '2026:08:01 00:00:00' }),
+      'late.jpg',
+      'image/jpeg',
+    );
+    // A PNG with no EXIF → no capture date; must sort behind the dated ones.
+    const undated = await uploadBuffer(await makePng(), 'undated.png', 'image/png');
+
+    const newest = await auth.agent.get('/api/images?sort=taken-newest');
+    expect(newest.body.images.map((i: { id: string }) => i.id)).toEqual([late, early, undated]);
+
+    const oldest = await auth.agent.get('/api/images?sort=taken-oldest');
+    expect(oldest.body.images.map((i: { id: string }) => i.id)).toEqual([early, late, undated]);
+
+    // The dated tile actually carries its capture date in the DTO.
+    const lateDto = newest.body.images.find((i: { id: string }) => i.id === late);
+    expect(lateDto.takenAt).toBe('2026-08-01T00:00:00.000Z');
+    const undatedDto = newest.body.images.find((i: { id: string }) => i.id === undated);
+    expect(undatedDto.takenAt).toBeUndefined();
   });
 
   it('reports where an image is used', async () => {

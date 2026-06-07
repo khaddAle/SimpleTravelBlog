@@ -163,6 +163,7 @@ export interface ImageLike {
   mime: string;
   width: number;
   height: number;
+  takenAt?: Date | null;
   createdAt: Date;
 }
 
@@ -175,6 +176,7 @@ export function toImageDto(i: ImageLike): ImageDto {
     height: i.height,
     displayUrl: imageVariantUrl(i.shortId, 'display'),
     thumbUrl: imageVariantUrl(i.shortId, 'thumb'),
+    ...(i.takenAt ? { takenAt: i.takenAt.toISOString() } : {}),
     createdAt: i.createdAt.toISOString(),
   };
 }

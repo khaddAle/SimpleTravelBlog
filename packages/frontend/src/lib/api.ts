@@ -41,7 +41,7 @@ export interface ListImagesQuery {
   pageSize?: number;
   q?: string;
   orphansOnly?: boolean;
-  sort?: 'newest' | 'oldest' | 'filename';
+  sort?: 'newest' | 'oldest' | 'filename' | 'taken-newest' | 'taken-oldest';
   /** Discount this post's persisted refs when filtering orphans (editor only). */
   excludePostId?: string;
 }

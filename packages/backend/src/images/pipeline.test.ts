@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import sharp from 'sharp';
 import { processImage, DISPLAY_MAX, THUMB_MAX } from './pipeline.js';
 import { hasExif } from './exif.js';
-import { makeJpegWithGps, makePng } from '../../tests/fixtures.js';
+import { makeJpegWithGps, makeJpegWithDateTaken, makePng } from '../../tests/fixtures.js';
 
 describe('processImage', () => {
   it('produces two WebP variants', async () => {
@@ -18,6 +18,16 @@ describe('processImage', () => {
     const { display, thumb } = await processImage(input);
     expect(await hasExif(display)).toBe(false);
     expect(await hasExif(thumb)).toBe(false);
+  });
+
+  it('surfaces the capture date from an EXIF-bearing input', async () => {
+    const { takenAt } = await processImage(await makeJpegWithDateTaken());
+    expect(takenAt?.toISOString()).toBe('2026-05-01T10:00:00.000Z');
+  });
+
+  it('leaves takenAt undefined when the input carries no capture date', async () => {
+    const { takenAt } = await processImage(await makePng());
+    expect(takenAt).toBeUndefined();
   });
 
   it('downscales large images within the variant bounds', async () => {

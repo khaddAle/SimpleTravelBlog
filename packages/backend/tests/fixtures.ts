@@ -33,6 +33,30 @@ export function makeJpegWithGps(opts: MakeImageOptions = {}): Promise<Buffer> {
     .toBuffer();
 }
 
+/**
+ * A JPEG carrying EXIF with a capture date in the Exif sub-IFD
+ * (`DateTimeOriginal`) — used to prove the capture date is read before metadata
+ * is stripped. `makeJpegWithGps` only sets IFD0 `DateTime`, a different tag.
+ * `dateTaken` is an EXIF datetime string ("YYYY:MM:DD HH:MM:SS").
+ *
+ * sharp names the Exif sub-IFD `IFD2`; exif-reader then surfaces these tags
+ * under `Photo` (so `readTakenAt` reads `Photo.DateTimeOriginal`).
+ */
+export function makeJpegWithDateTaken(
+  opts: MakeImageOptions & { dateTaken?: string } = {},
+): Promise<Buffer> {
+  const {
+    width = 64,
+    height = 48,
+    background = '#eb8f34',
+    dateTaken = '2026:05:01 10:00:00',
+  } = opts;
+  return sharp({ create: { width, height, channels: 3, background } })
+    .withExif({ IFD2: { DateTimeOriginal: dateTaken } })
+    .jpeg()
+    .toBuffer();
+}
+
 /** A plain PNG with no metadata. */
 export function makePng(opts: MakeImageOptions = {}): Promise<Buffer> {
   const { width = 64, height = 48, background = '#22aa55' } = opts;

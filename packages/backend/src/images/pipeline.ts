@@ -1,4 +1,5 @@
 import sharp from 'sharp';
+import { readTakenAt } from './exif.js';
 
 /**
  * Transcode an uploaded image into the two WebP variants the blog serves:
@@ -6,6 +7,11 @@ import sharp from 'sharp';
  * thumbnail (bounded to {@link THUMB_MAX}px). A plain sharp re-encode drops all
  * input metadata, so EXIF — and therefore any embedded GPS — never reaches the
  * stored objects. `.rotate()` bakes in EXIF orientation before the tag is lost.
+ *
+ * The capture date is read from the input buffer here (before the variants are
+ * encoded) and surfaced as {@link ProcessedImage.takenAt}; it is persisted on
+ * the Image document, not embedded in the stored objects, so GPS stays out of
+ * storage.
  *
  * sharp's prebuilt binary decodes JPEG/PNG/WebP and (via bundled libheif) HEIC,
  * so this function is format-agnostic about its input.
@@ -21,10 +27,13 @@ export interface ProcessedImage {
   /** Dimensions of the display variant. */
   width: number;
   height: number;
+  /** EXIF capture date, read before stripping; absent when the input had none. */
+  takenAt?: Date;
 }
 
 export async function processImage(input: Buffer): Promise<ProcessedImage> {
   const base = sharp(input).rotate();
+  const takenAt = await readTakenAt(input);
 
   // `resolveWithObject` returns the encoded buffer alongside its final
   // dimensions, so we read width/height without a second metadata pass.
@@ -55,5 +64,6 @@ export async function processImage(input: Buffer): Promise<ProcessedImage> {
     thumb,
     width: display.info.width,
     height: display.info.height,
+    ...(takenAt ? { takenAt } : {}),
   };
 }
