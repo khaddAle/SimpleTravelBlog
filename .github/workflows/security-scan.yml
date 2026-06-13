@@ -1,0 +1,71 @@
+name: security-scan
+
+# Report-only repo-wide scan: npm/dependency CVEs and Dockerfile/YAML misconfig.
+# Never fails the build (exit-code 0). Ratchet to gating once the baseline is triaged.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  deps:
+    name: security-scan/deps (Trivy fs)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v5
+
+      # SHA-pinned third-party action — defends against the Mar 2026 Trivy supply-chain attack.
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          version: v0.71.0
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '0'
+          format: table
+          output: trivy-deps.txt
+
+      - name: Append dependency report to job summary
+        shell: bash
+        run: |
+          {
+            echo "## Trivy dependency scan (HIGH/CRITICAL, fixed only)"
+            echo ""
+            echo '```'
+            cat trivy-deps.txt || echo "(no Trivy output produced)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  config:
+    name: security-scan/config (Trivy config)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v5
+
+      # SHA-pinned third-party action — defends against the Mar 2026 Trivy supply-chain attack.
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          version: v0.71.0
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+          format: table
+          output: trivy-config.txt
+
+      - name: Append config report to job summary
+        shell: bash
+        run: |
+          {
+            echo "## Trivy config / misconfig scan (HIGH/CRITICAL)"
+            echo ""
+            echo '```'
+            cat trivy-config.txt || echo "(no Trivy output produced)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

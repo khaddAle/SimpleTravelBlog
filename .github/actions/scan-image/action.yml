@@ -1,0 +1,54 @@
+name: Scan image (Trivy + Syft SBOM)
+description: >-
+  Report-only Trivy vulnerability scan of a pushed container image plus a
+  CycloneDX SBOM (Syft), uploaded as a private workflow artifact. Never fails
+  the build (exit-code 0).
+
+inputs:
+  image:
+    description: Full image reference to scan, e.g. ghcr.io/khaddale/simple-travel-blog:1.2.3
+    required: true
+  sbom-name:
+    description: Artifact name for the uploaded CycloneDX SBOM
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # Trivy: vulnerability scan of the pushed image (report-only)
+    # SHA-pinned third-party action — defends against the Mar 2026 Trivy supply-chain attack.
+    - name: Trivy image scan
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      with:
+        scan-type: image
+        image-ref: ${{ inputs.image }}
+        version: v0.71.0
+        scanners: vuln
+        severity: HIGH,CRITICAL
+        ignore-unfixed: true
+        exit-code: '0'
+        format: table
+        output: trivy-image.txt
+
+    - name: Append Trivy image report to job summary
+      shell: bash
+      run: |
+        {
+          echo "## Trivy image scan — \`${{ inputs.image }}\`"
+          echo ""
+          echo '```'
+          cat trivy-image.txt || echo "(no Trivy output produced)"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    # Syft: CycloneDX SBOM of the image, uploaded as a private workflow artifact
+    # SHA-pinned third-party action.
+    - name: Generate SBOM (Syft)
+      uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+      with:
+        image: ${{ inputs.image }}
+        syft-version: v1.44.0
+        format: cyclonedx-json
+        artifact-name: ${{ inputs.sbom-name }}
+        upload-artifact: 'true'
+        upload-release-assets: 'false'

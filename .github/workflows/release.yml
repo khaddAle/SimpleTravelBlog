@@ -65,3 +65,11 @@ jobs:
           sbom: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Security: report-only Trivy scan + CycloneDX SBOM of the pushed image.
+      # tags[0] is the first full (lowercased) image:tag the build pushed.
+      - name: Scan image and generate SBOM
+        uses: ./.github/actions/scan-image
+        with:
+          image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          sbom-name: sbom-simple-travel-blog-${{ steps.meta.outputs.version }}.cyclonedx.json
