@@ -5,6 +5,7 @@ import type { ImageDto } from '@stb/shared';
 import { auth } from '../lib/auth.svelte.js';
 import { api, ApiError } from '../lib/api.js';
 import type { EventSourceLike } from '../lib/uploads.js';
+import { clearRememberedSorts } from './imageSortMemory.js';
 
 vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
 
@@ -34,6 +35,7 @@ class FakeEventSource implements EventSourceLike {
 }
 
 beforeEach(() => {
+  clearRememberedSorts();
   auth.user = { id: 'u1', username: 'mum', role: 'admin' };
   vi.spyOn(api, 'listImages').mockResolvedValue({
     items: [image('a', 'alpha.jpg')],
@@ -59,6 +61,31 @@ describe('ImageLibrary', () => {
     await waitFor(() =>
       expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ q: 'alp' })),
     );
+  });
+
+  it('defaults to the capture-date newest sort', async () => {
+    render(ImageLibrary);
+    await screen.findByText('alpha.jpg');
+    expect(api.listImages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort: 'taken-newest' }),
+    );
+    expect(screen.getByLabelText('Sortierung')).toHaveValue('taken-newest');
+  });
+
+  it('remembers the chosen sort when reopened in the same session', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(ImageLibrary);
+    await screen.findByText('alpha.jpg');
+    await user.selectOptions(screen.getByLabelText('Sortierung'), 'oldest');
+    await waitFor(() =>
+      expect(api.listImages).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'oldest' })),
+    );
+    unmount();
+
+    render(ImageLibrary);
+    await screen.findByText('alpha.jpg');
+    expect(api.listImages).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'oldest' }));
+    expect(screen.getByLabelText('Sortierung')).toHaveValue('oldest');
   });
 
   it('changes the sort order', async () => {

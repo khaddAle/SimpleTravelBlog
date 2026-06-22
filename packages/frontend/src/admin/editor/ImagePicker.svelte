@@ -3,6 +3,11 @@
   import type { ImageDto } from '@stb/shared';
   import { api } from '../../lib/api.js';
   import type { EventSourceFactory } from '../../lib/uploads.js';
+  import {
+    rememberedSort,
+    rememberSort,
+    type ImageSortKey,
+  } from '../imageSortMemory.js';
   import UploadProgress from './UploadProgress.svelte';
 
   interface Props {
@@ -46,9 +51,12 @@
   let page = $state(1);
   const pageSize = 24;
   let q = $state('');
-  let sort = $state<'newest' | 'oldest' | 'filename' | 'taken-newest' | 'taken-oldest'>(
-    'newest',
-  );
+  // Default to capture-date oldest-first; restore the user's last choice for the
+  // rest of the session (see imageSortMemory — resets on a full reload).
+  let sort = $state<ImageSortKey>(rememberedSort('picker', 'taken-oldest'));
+  $effect(() => {
+    rememberSort('picker', sort);
+  });
   // Props are init-only seeds for this local state; untrack documents that.
   let orphansOnly = $state(untrack(() => initialOrphansOnly));
   let selected = $state<string[]>(untrack(() => [...initialSelected]));

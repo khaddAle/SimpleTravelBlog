@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import type { ImageDto } from '@stb/shared';
 import { api } from '../../lib/api.js';
 import type { EventSourceLike } from '../../lib/uploads.js';
+import { clearRememberedSorts } from '../imageSortMemory.js';
 import ImagePicker from './ImagePicker.svelte';
 
 function makeImage(id: string, filename: string): ImageDto {
@@ -22,6 +23,7 @@ function makeImage(id: string, filename: string): ImageDto {
 const twoImages = [makeImage('a', 'alpha.jpg'), makeImage('b', 'beta.jpg')];
 
 beforeEach(() => {
+  clearRememberedSorts();
   vi.spyOn(api, 'listImages').mockResolvedValue({
     items: twoImages,
     page: 1,
@@ -84,6 +86,35 @@ describe('ImagePicker browsing', () => {
         expect.objectContaining({ q: 'beta', page: 1 }),
       );
     });
+  });
+
+  it('defaults to the capture-date oldest sort', async () => {
+    render(ImagePicker, { onSelect: vi.fn(), onCancel: vi.fn() });
+    await screen.findByLabelText('alpha.jpg');
+    expect(api.listImages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort: 'taken-oldest' }),
+    );
+    expect(screen.getByLabelText('Sortierung')).toHaveValue('taken-oldest');
+  });
+
+  it('remembers the chosen sort when reopened in the same session', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(ImagePicker, { onSelect: vi.fn(), onCancel: vi.fn() });
+    await screen.findByLabelText('alpha.jpg');
+    await user.selectOptions(screen.getByLabelText('Sortierung'), 'filename');
+    await waitFor(() =>
+      expect(api.listImages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sort: 'filename' }),
+      ),
+    );
+    unmount();
+
+    render(ImagePicker, { onSelect: vi.fn(), onCancel: vi.fn() });
+    await screen.findByLabelText('alpha.jpg');
+    expect(api.listImages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort: 'filename' }),
+    );
+    expect(screen.getByLabelText('Sortierung')).toHaveValue('filename');
   });
 
   it('sorts by capture date in both directions', async () => {

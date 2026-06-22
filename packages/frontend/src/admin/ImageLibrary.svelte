@@ -4,6 +4,7 @@
   import { api, ApiError, type PostRef } from '../lib/api.js';
   import { formatDate } from '../lib/dates.js';
   import type { EventSourceFactory } from '../lib/uploads.js';
+  import { rememberedSort, rememberSort, type ImageSortKey } from './imageSortMemory.js';
   import AdminLayout from './AdminLayout.svelte';
   import UploadProgress from './editor/UploadProgress.svelte';
 
@@ -15,9 +16,12 @@
   let page = $state(1);
   const pageSize = 24;
   let q = $state('');
-  let sort = $state<'newest' | 'oldest' | 'filename' | 'taken-newest' | 'taken-oldest'>(
-    'newest',
-  );
+  // Default to capture-date newest-first; restore the user's last choice for the
+  // rest of the session (see imageSortMemory — resets on a full reload).
+  let sort = $state<ImageSortKey>(rememberedSort('library', 'taken-newest'));
+  $effect(() => {
+    rememberSort('library', sort);
+  });
   let orphansOnly = $state(false);
   let loading = $state(true);
 
