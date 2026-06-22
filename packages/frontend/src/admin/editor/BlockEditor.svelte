@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack, tick } from 'svelte';
+  import { SvelteMap } from 'svelte/reactivity';
   import type { Block, BlockType } from '@stb/shared';
   import { imageUrl } from '../../lib/images.js';
 
@@ -40,7 +41,7 @@
 
   // Live paragraph textarea nodes, keyed by entry key, so a split can move focus
   // into the freshly inserted block after the DOM updates.
-  const paraNodes = new Map<string, HTMLTextAreaElement>();
+  const paraNodes = new SvelteMap<string, HTMLTextAreaElement>();
 
   // Registers a paragraph textarea and tracks its caret. selectionStart is
   // preserved across blur, so the value recorded while editing stays reliable
