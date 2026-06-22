@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { untrack, tick } from 'svelte';
   import type { Block, BlockType } from '@stb/shared';
   import { imageUrl } from '../../lib/images.js';
 
@@ -32,6 +32,74 @@
 
   // Which gap's insert menu is open (index into the gaps), or null.
   let openInserter = $state<number | null>(null);
+
+  // The text caret in the paragraph currently being edited (keyed by entry key
+  // so it survives splices). `collapsed` is false while a range is selected —
+  // splitting then is disabled because there is no single point to break at.
+  let caret = $state<{ key: string; pos: number; collapsed: boolean } | null>(null);
+
+  // Live paragraph textarea nodes, keyed by entry key, so a split can move focus
+  // into the freshly inserted block after the DOM updates.
+  const paraNodes = new Map<string, HTMLTextAreaElement>();
+
+  // Registers a paragraph textarea and tracks its caret. selectionStart is
+  // preserved across blur, so the value recorded while editing stays reliable
+  // even after the split button takes focus.
+  function paragraphCaret(node: HTMLTextAreaElement, key: string) {
+    paraNodes.set(key, node);
+    const events = ['keyup', 'click', 'select', 'focus'] as const;
+    const record = (): void => {
+      const pos = node.selectionStart ?? 0;
+      caret = { key, pos, collapsed: pos === (node.selectionEnd ?? pos) };
+    };
+    for (const ev of events) node.addEventListener(ev, record);
+    return {
+      destroy() {
+        for (const ev of events) node.removeEventListener(ev, record);
+        paraNodes.delete(key);
+      },
+    };
+  }
+
+  // After a split, focus the new block at offset 0 once it has rendered.
+  let pendingFocusKey = $state<string | null>(null);
+  $effect(() => {
+    if (!pendingFocusKey) return;
+    const key = pendingFocusKey;
+    pendingFocusKey = null;
+    tick().then(() => {
+      const node = paraNodes.get(key);
+      if (!node) return;
+      node.focus();
+      node.setSelectionRange(0, 0);
+      caret = { key, pos: 0, collapsed: true };
+    });
+  });
+
+  // A split needs a collapsed caret strictly inside the text, so neither half is
+  // empty (an empty paragraph would fail the min(1) validation on save).
+  function canSplit(index: number): boolean {
+    const entry = entries[index]!;
+    if (entry.block.type !== 'paragraph') return false;
+    if (!caret || caret.key !== entry.key || !caret.collapsed) return false;
+    return caret.pos > 0 && caret.pos < entry.block.text.length;
+  }
+
+  function splitParagraph(index: number): void {
+    const entry = entries[index]!;
+    if (entry.block.type !== 'paragraph' || !caret || caret.key !== entry.key) return;
+    const { text } = entry.block;
+    const pos = caret.pos;
+    if (pos <= 0 || pos >= text.length) return;
+    entry.block = { ...entry.block, text: text.slice(0, pos) };
+    const newKey = crypto.randomUUID();
+    entries.splice(index + 1, 0, {
+      key: newKey,
+      block: { type: 'paragraph', text: text.slice(pos) },
+    });
+    emit();
+    pendingFocusKey = newKey;
+  }
 
   function emit(): void {
     onChange(entries.map((e) => e.block));
@@ -219,6 +287,15 @@
             disabled={index === entries.length - 1}
             onclick={() => move(index, 1)}>▼</button
           >
+          {#if entry.block.type === 'paragraph'}
+            <button
+              type="button"
+              class="split"
+              aria-label="Absatz hier teilen"
+              disabled={!canSplit(index)}
+              onclick={() => splitParagraph(index)}>✂</button
+            >
+          {/if}
           <button type="button" class="del" aria-label="Entfernen" onclick={() => remove(index)}
             >✕</button
           >
@@ -239,6 +316,7 @@
             value={entry.block.text}
             aria-label="Absatz"
             placeholder="Text schreiben…"
+            use:paragraphCaret={entry.key}
             oninput={(e) => setText(index, e.currentTarget.value)}
           ></textarea>
         {:else if entry.block.type === 'quote'}
@@ -375,6 +453,9 @@
   .tools button.del:hover {
     border-color: #b4452f;
     color: #b4452f;
+  }
+  .tools button.split {
+    font-size: 12px;
   }
   .tools button:disabled {
     opacity: 0.3;

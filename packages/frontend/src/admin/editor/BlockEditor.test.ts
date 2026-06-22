@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, within } from '@testing-library/svelte';
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import type { Block } from '@stb/shared';
 import BlockEditor from './BlockEditor.svelte';
@@ -28,6 +28,21 @@ async function insert(
 /** The block list items (`.block`), in document order. */
 function blocks(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>('.block'));
+}
+
+/**
+ * Place a (by default collapsed) text caret in a textarea and let the editor's
+ * caret-tracking action record it. `selectionStart` is read on `select`, so we
+ * set the range then fire that event.
+ */
+async function placeCaret(
+  node: HTMLTextAreaElement,
+  start: number,
+  end: number = start,
+): Promise<void> {
+  node.focus();
+  node.setSelectionRange(start, end);
+  await fireEvent.select(node);
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -258,6 +273,84 @@ describe('BlockEditor', () => {
     await user.type(screen.getByLabelText('Galerie-Bildunterschrift'), 'Tour');
     expect(onChange).toHaveBeenLastCalledWith([
       { type: 'gallery', imageIds: ['a', 'b'], caption: 'Tour' },
+    ]);
+  });
+
+  it('splits a paragraph at the cursor', async () => {
+    const user = userEvent.setup();
+    const { onChange } = setup([{ type: 'paragraph', text: 'HalloWelt' }]);
+    const textarea = screen.getByLabelText('Absatz') as HTMLTextAreaElement;
+    await placeCaret(textarea, 5);
+    await user.click(screen.getByRole('button', { name: 'Absatz hier teilen' }));
+    expect(onChange).toHaveBeenLastCalledWith([
+      { type: 'paragraph', text: 'Hallo' },
+      { type: 'paragraph', text: 'Welt' },
+    ]);
+  });
+
+  it('disables the split button when the caret is at the start', async () => {
+    setup([{ type: 'paragraph', text: 'HalloWelt' }]);
+    const textarea = screen.getByLabelText('Absatz') as HTMLTextAreaElement;
+    await placeCaret(textarea, 0);
+    expect(screen.getByRole('button', { name: 'Absatz hier teilen' })).toBeDisabled();
+  });
+
+  it('disables the split button when the caret is at the end', async () => {
+    setup([{ type: 'paragraph', text: 'HalloWelt' }]);
+    const textarea = screen.getByLabelText('Absatz') as HTMLTextAreaElement;
+    await placeCaret(textarea, 'HalloWelt'.length);
+    expect(screen.getByRole('button', { name: 'Absatz hier teilen' })).toBeDisabled();
+  });
+
+  it('disables the split button while a range is selected', async () => {
+    setup([{ type: 'paragraph', text: 'HalloWelt' }]);
+    const textarea = screen.getByLabelText('Absatz') as HTMLTextAreaElement;
+    await placeCaret(textarea, 2, 6); // non-collapsed selection mid-text
+    expect(screen.getByRole('button', { name: 'Absatz hier teilen' })).toBeDisabled();
+  });
+
+  it('renders the split button only on paragraph blocks', () => {
+    setup([
+      { type: 'title', text: 'A' },
+      { type: 'subtitle', text: 'B' },
+      { type: 'quote', text: 'C' },
+      { type: 'image', imageId: 'img1' },
+      { type: 'divider' },
+    ]);
+    expect(screen.queryByRole('button', { name: 'Absatz hier teilen' })).toBeNull();
+  });
+
+  it('moves focus to the start of the new block after a split', async () => {
+    const user = userEvent.setup();
+    const { container } = setup([{ type: 'paragraph', text: 'HalloWelt' }]);
+    const textarea = screen.getByLabelText('Absatz') as HTMLTextAreaElement;
+    await placeCaret(textarea, 5);
+    await user.click(screen.getByRole('button', { name: 'Absatz hier teilen' }));
+
+    await waitFor(() => {
+      const areas = within(container).getAllByLabelText('Absatz') as HTMLTextAreaElement[];
+      expect(areas).toHaveLength(2);
+      const second = areas[1]!;
+      expect(document.activeElement).toBe(second);
+      expect(second.selectionStart).toBe(0);
+      expect(second.selectionEnd).toBe(0);
+    });
+  });
+
+  it('lets the inserter add a block between the two halves after a split', async () => {
+    const user = userEvent.setup();
+    const { onChange } = setup([{ type: 'paragraph', text: 'HalloWelt' }]);
+    const textarea = screen.getByLabelText('Absatz') as HTMLTextAreaElement;
+    await placeCaret(textarea, 5);
+    await user.click(screen.getByRole('button', { name: 'Absatz hier teilen' }));
+
+    // Gap 1 sits between the two halves; inserting there proves the original
+    // "put an image in the middle" workflow is now reachable.
+    await insert(user, 'Trenner', 1);
+    expect(onChange).toHaveBeenLastCalledWith([
+      { type: 'paragraph', text: 'Hallo' },
+      { type: 'divider' },
+      { type: 'paragraph', text: 'Welt' },
     ]);
   });
 });

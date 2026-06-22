@@ -60,11 +60,14 @@ export async function gotoNewPost(page: Page): Promise<void> {
 }
 
 /**
- * Open the block inserter menu at the end of the block list. Blocks are added
- * through a per-gap "+" (aria-label "Block einfügen"); the trailing gap appends.
+ * Open the block inserter menu. Blocks are added through a per-gap "+"
+ * (aria-label "Block einfügen"); `gap` picks a specific gap (0 = before the
+ * first block), and the default trailing gap appends.
  */
-export async function openInserterMenu(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Block einfügen' }).last().click();
+export async function openInserterMenu(page: Page, gap?: number): Promise<void> {
+  const adders = page.getByRole('button', { name: 'Block einfügen' });
+  if (gap === undefined) await adders.last().click();
+  else await adders.nth(gap).click();
 }
 
 /** Fill the metadata sidebar's required fields (title/country/place). */
@@ -89,9 +92,13 @@ export async function addParagraph(page: Page, text: string): Promise<void> {
  * SSE pipeline to finish, and confirm the selection — leaving an image block in
  * the editor. Returns the uploaded file's name.
  */
-export async function addImageBlockByUpload(page: Page, name = 'strand.jpg'): Promise<string> {
+export async function addImageBlockByUpload(
+  page: Page,
+  name = 'strand.jpg',
+  gap?: number,
+): Promise<string> {
   const file = await makeJpegUpload(name);
-  await openInserterMenu(page);
+  await openInserterMenu(page, gap);
   await page.getByRole('button', { name: 'Bild', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Bildauswahl' });
   await expect(dialog).toBeVisible();
@@ -104,6 +111,23 @@ export async function addImageBlockByUpload(page: Page, name = 'strand.jpg'): Pr
   await dialog.getByRole('button', { name: 'Auswählen' }).click();
   await expect(dialog).toBeHidden();
   return file.name;
+}
+
+/**
+ * Place a collapsed caret at `offset` in the last "Absatz" textarea and click
+ * the per-block "Absatz hier teilen" (✂) tool to split it there. The split tool
+ * lives in the hover/focus rail and reads `selectionStart`, so we focus, set the
+ * range, and fire `select` before clicking.
+ */
+export async function splitParagraphAt(page: Page, offset: number): Promise<void> {
+  const textarea = page.getByLabel('Absatz').last();
+  await textarea.evaluate((node, pos) => {
+    const ta = node as HTMLTextAreaElement;
+    ta.focus();
+    ta.setSelectionRange(pos, pos);
+    ta.dispatchEvent(new Event('select', { bubbles: true }));
+  }, offset);
+  await page.getByRole('button', { name: 'Absatz hier teilen' }).click();
 }
 
 /** Click "Veröffentlichen" and wait for the redirect back to the post list. */
