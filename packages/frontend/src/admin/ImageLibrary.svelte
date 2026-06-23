@@ -7,6 +7,7 @@
   import { rememberedSort, rememberSort, type ImageSortKey } from './imageSortMemory.js';
   import AdminLayout from './AdminLayout.svelte';
   import UploadProgress from './editor/UploadProgress.svelte';
+  import Lightbox from '../blocks/Lightbox.svelte';
 
   /** Injectable EventSource factory, forwarded to UploadProgress for tests. */
   let { eventSourceFactory }: { eventSourceFactory?: EventSourceFactory } = $props();
@@ -40,6 +41,10 @@
 
   let toastMsg = $state('');
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // The image whose full-size preview is open, or null. Set only on a magnifier
+  // click → the Lightbox (and its ≤1600px display fetch) mounts lazily.
+  let preview = $state<ImageDto | null>(null);
 
   // Accepted upload types — the real pipeline (sharp + libheif) handles these.
   const ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,image/heif';
@@ -332,6 +337,17 @@
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7l3 3 6-7" /></svg>
             </label>
           {/if}
+          <button
+            type="button"
+            class="zoom"
+            aria-label={`${image.originalFilename} in voller Größe anzeigen`}
+            onclick={() => (preview = image)}
+          >
+            <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="8" cy="8" r="5" /><path d="M12 12l4 4" />
+            </svg>
+          </button>
           <div class="thumb"><div class="inner"><img src={image.thumbUrl} alt="" /></div></div>
           <div class="body">
             <div class="fn">{image.originalFilename}</div>
@@ -370,6 +386,14 @@
       <span>Seite {page} von {totalPages}</span>
       <button type="button" disabled={page >= totalPages} onclick={() => (page += 1)}>Weiter</button>
     </div>
+  {/if}
+
+  {#if preview}
+    <Lightbox
+      imageIds={[preview.id]}
+      caption={preview.originalFilename}
+      onClose={() => (preview = null)}
+    />
   {/if}
 </AdminLayout>
 
@@ -558,6 +582,28 @@
   }
   .img-card.sel .selbox svg {
     opacity: 1;
+  }
+  .zoom {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    z-index: 2;
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    border-radius: 50%;
+    background: rgba(16, 22, 32, 0.62);
+    color: #fff;
+    cursor: pointer;
+  }
+  .zoom:hover,
+  .zoom:focus-visible {
+    background: rgba(16, 22, 32, 0.88);
+    outline: none;
   }
   .thumb {
     position: relative;

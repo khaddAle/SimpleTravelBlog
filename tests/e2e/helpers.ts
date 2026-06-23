@@ -104,8 +104,9 @@ export async function addImageBlockByUpload(
   await expect(dialog).toBeVisible();
   await dialog.getByLabel('Hochladen').setInputFiles(file);
   // The pipeline transcodes + persists, then the picker reloads and pre-selects
-  // the new image (its thumbnail button is labelled with the filename).
-  await expect(dialog.getByRole('button', { name: file.name })).toBeVisible({
+  // the new image (its thumbnail button is labelled with the filename). `exact`
+  // so it isn't confused with the per-thumb "… in voller Größe anzeigen" magnifier.
+  await expect(dialog.getByRole('button', { name: file.name, exact: true })).toBeVisible({
     timeout: 30_000,
   });
   await dialog.getByRole('button', { name: 'Auswählen' }).click();

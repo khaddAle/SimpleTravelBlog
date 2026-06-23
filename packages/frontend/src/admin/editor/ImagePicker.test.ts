@@ -273,6 +273,53 @@ describe('ImagePicker browsing', () => {
   });
 });
 
+describe('ImagePicker preview', () => {
+  it('opens the full image lazily without touching the selection', async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(ImagePicker, { mode: 'multiple', onSelect, onCancel: vi.fn() });
+    await screen.findByLabelText('alpha.jpg');
+
+    // The display variant must not be fetched until the preview is opened.
+    expect(
+      document.querySelector('img[src="/api/public/images/a/display"]'),
+    ).toBeNull();
+
+    await user.click(
+      screen.getByRole('button', { name: 'alpha.jpg in voller Größe anzeigen' }),
+    );
+
+    expect(
+      document.querySelector('img[src="/api/public/images/a/display"]'),
+    ).not.toBeNull();
+    // The picker shows no filename text otherwise — this is the Lightbox caption.
+    expect(screen.getByText('alpha.jpg')).toBeInTheDocument();
+    expect(screen.getByText('0 ausgewählt')).toBeInTheDocument();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('closing the preview returns to the picker', async () => {
+    const user = userEvent.setup();
+    render(ImagePicker, { mode: 'multiple', onSelect: vi.fn(), onCancel: vi.fn() });
+    await screen.findByLabelText('alpha.jpg');
+
+    await user.click(
+      screen.getByRole('button', { name: 'alpha.jpg in voller Größe anzeigen' }),
+    );
+    expect(
+      document.querySelector('img[src="/api/public/images/a/display"]'),
+    ).not.toBeNull();
+
+    // Escape closes only the Lightbox (the picker header's ✕ shares the
+    // "Schließen" label, so target Escape rather than that ambiguous button).
+    await user.keyboard('{Escape}');
+    expect(
+      document.querySelector('img[src="/api/public/images/a/display"]'),
+    ).toBeNull();
+    expect(screen.getByLabelText('alpha.jpg')).toBeInTheDocument();
+  });
+});
+
 describe('ImagePicker upload', () => {
   class FakeEventSource implements EventSourceLike {
     onmessage: ((event: { data: string }) => void) | null = null;

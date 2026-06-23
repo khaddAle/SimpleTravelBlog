@@ -9,6 +9,7 @@
     type ImageSortKey,
   } from '../imageSortMemory.js';
   import UploadProgress from './UploadProgress.svelte';
+  import Lightbox from '../../blocks/Lightbox.svelte';
 
   interface Props {
     mode?: 'single' | 'multiple';
@@ -69,6 +70,10 @@
     error: string | null;
   }
   let jobs = $state<UploadJob[]>([]);
+
+  // The image whose full-size preview is open, or null. Set only on a magnifier
+  // click → the Lightbox (and its ≤1600px display fetch) mounts lazily.
+  let preview = $state<ImageDto | null>(null);
 
   // Accepted upload types — the real pipeline (sharp + libheif) handles these.
   const ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,image/heif';
@@ -239,6 +244,17 @@
           >
             <span class="mat"><span class="frame"><img src={image.thumbUrl} alt="" /></span></span>
           </button>
+          <button
+            type="button"
+            class="zoom"
+            aria-label={`${image.originalFilename} in voller Größe anzeigen`}
+            onclick={() => (preview = image)}
+          >
+            <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="8" cy="8" r="5" /><path d="M12 12l4 4" />
+            </svg>
+          </button>
         </li>
       {/each}
     </ul>
@@ -267,6 +283,14 @@
       </button>
     </div>
   </footer>
+
+  {#if preview}
+    <Lightbox
+      imageIds={[preview.id]}
+      caption={preview.originalFilename}
+      onClose={() => (preview = null)}
+    />
+  {/if}
 </div>
 
 <style>
@@ -377,6 +401,9 @@
     grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
     gap: 14px;
   }
+  .grid > li {
+    position: relative;
+  }
   .thumb {
     display: block;
     width: 100%;
@@ -385,6 +412,28 @@
     background: none;
     cursor: pointer;
     border-radius: 2px;
+  }
+  .zoom {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    z-index: 2;
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    border-radius: 50%;
+    background: rgba(16, 22, 32, 0.62);
+    color: #fff;
+    cursor: pointer;
+  }
+  .zoom:hover,
+  .zoom:focus-visible {
+    background: rgba(16, 22, 32, 0.88);
+    outline: none;
   }
   .thumb .mat {
     display: block;

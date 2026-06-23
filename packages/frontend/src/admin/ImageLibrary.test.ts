@@ -207,6 +207,29 @@ describe('ImageLibrary', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
+  it('opens and closes a full-image preview lazily', async () => {
+    const user = userEvent.setup();
+    render(ImageLibrary);
+    await screen.findByText('alpha.jpg');
+
+    // The display variant must not be fetched until the preview is opened.
+    expect(
+      document.querySelector('img[src="/api/public/images/a/display"]'),
+    ).toBeNull();
+
+    await user.click(
+      screen.getByRole('button', { name: 'alpha.jpg in voller Größe anzeigen' }),
+    );
+    expect(
+      document.querySelector('img[src="/api/public/images/a/display"]'),
+    ).not.toBeNull();
+
+    await user.keyboard('{Escape}');
+    expect(
+      document.querySelector('img[src="/api/public/images/a/display"]'),
+    ).toBeNull();
+  });
+
   it('uploads a file and reloads when it completes', async () => {
     const user = userEvent.setup();
     vi.spyOn(api, 'uploadImage').mockResolvedValue({ uploadId: 'up1', imageId: 'c' });

@@ -22,7 +22,9 @@ test('an unused upload is listed under "Nur unbenutzte" and can be deleted', asy
   await page.getByRole('button', { name: 'Bild', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Bildauswahl' });
   await dialog.getByLabel('Hochladen').setInputFiles(file);
-  await expect(dialog.getByRole('button', { name: file.name })).toBeVisible({ timeout: 30_000 });
+  await expect(dialog.getByRole('button', { name: file.name, exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   await dialog.getByRole('button', { name: 'Abbrechen' }).click();
 
   // Library: filter to orphans, the upload is there, delete it.
