@@ -22,8 +22,6 @@ those are flagged **[fallback]** with the rejected "latest" in parentheses.
 | `@fastify/static` | `9.1.3` | Serve built SPA assets. |
 | `@fastify/multipart` | `10.0.0` | Image upload handling. |
 | `@fastify/cookie` | `11.0.2` | Session + CSRF cookies. |
-| `@fastify/csrf-protection` | `7.1.0` | Double-submit CSRF tokens. |
-| `@fastify/rate-limit` | `10.3.0` | Login rate limit (Redis-backed). |
 | `@fastify/sensible` | `6.0.4` | `httpErrors.unauthorized()` etc. |
 | `mongoose` | `9.6.2` **[fallback]** (latest `9.6.3`) | ODM. |
 | `ioredis` | `5.10.1` **[fallback]** (latest `5.11.0`) | Sentinel-aware Redis client. |
