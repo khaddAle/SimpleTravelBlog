@@ -34,3 +34,4 @@ import/
 
 # Local design-preview harness: mock API + screenshot scripts and their output
 .preview/
+design/
