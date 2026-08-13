@@ -8,7 +8,7 @@
 - tests/e2e/        Playwright
 
 ## Conventions
-- Node 22 (.nvmrc), strict TS, ESM only ("type": "module").
+- Node 24 (.nvmrc), strict TS, ESM only ("type": "module").
 - npm installs: ALWAYS --save-exact --ignore-scripts. No ^/~. No lifecycle scripts.
 - TDD: tests first, watch them fail, implement to green, refactor. 80% coverage gate (CI enforced).
 - Unit tests co-located as *.test.ts; integration in packages/<x>/tests/integration; e2e in tests/e2e.

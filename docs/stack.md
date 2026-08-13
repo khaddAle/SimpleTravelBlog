@@ -12,8 +12,8 @@ those are flagged **[fallback]** with the rejected "latest" in parentheses.
 ## Runtime
 | | Version | Notes |
 |---|---|---|
-| Node | `22.22.3` (Jod LTS) | ARM64 native. Pinned in `.nvmrc`, Docker base, CI setup-node. |
-| Base image | `node:22.22.3-bookworm-slim` (linux/arm64) | glibc base for sharp's prebuilt `@img` binaries + argon2. sharp bundles its own libvips (incl. HEIF), so no image libs are apt-installed. Alpine (musl) rejected. |
+| Node | `24.19.0` (Krypton, Active LTS) | ARM64 native. Pinned in `.nvmrc`, Docker base, CI setup-node. Moved off 22 (Jod) on 2026-08-13: 22 entered maintenance 2025-10-21, 24 is Active LTS until 2026-10-20 (EOL 2028-04-30). |
+| Base image | `node:24.19.0-bookworm-slim` (linux/arm64) | glibc base for sharp's prebuilt `@img` binaries + argon2. sharp bundles its own libvips (incl. HEIF), so no image libs are apt-installed. Alpine (musl) rejected. |
 
 ## Backend dependencies
 | Package | Version | Why |
@@ -50,7 +50,7 @@ those are flagged **[fallback]** with the rejected "latest" in parentheses.
 | `mongodb-memory-server` | `11.1.0` | In-memory Mongo (replica set) per test run. |
 | `supertest` | `7.2.2` | HTTP assertions against Fastify. |
 | `@types/supertest` | `7.2.0` | |
-| `@types/node` | `25.7.0` **[fallback]** (latest `25.9.1`) | Node 22 type defs. |
+| `@types/node` | `24.13.3` | Node 24 type defs — major tracks the runtime major, so this follows `.nvmrc`, not npm's `latest`. |
 | `pino-pretty` | `13.1.3` | Local-dev log formatter. |
 | `eslint` | `10.3.0` **[fallback]** (latest `10.4.0`) | Flat config. |
 | `prettier` | `3.8.3` | Formatter. |
