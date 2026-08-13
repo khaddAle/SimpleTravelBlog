@@ -36,10 +36,12 @@ export async function registerSpaStatic(
     // and Last-Modified (its defaults) for conditional revalidation.
     cacheControl: false,
     // Runs for direct file serves AND the `reply.sendFile` fallback below.
-    setHeaders(res, filePath) {
+    // @fastify/static v10 hands this a FastifyReply, not a Node response, so
+    // headers go through `reply.header()` rather than `res.setHeader()`.
+    setHeaders(reply, filePath) {
       const header =
         basename(filePath) === 'index.html' ? SHELL_CACHE_CONTROL : ASSET_CACHE_CONTROL;
-      res.setHeader('Cache-Control', header);
+      reply.header('Cache-Control', header);
     },
   });
 

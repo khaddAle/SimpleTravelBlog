@@ -7,7 +7,7 @@
 # resolves; the server is pointed at the built SPA via FRONTEND_DIST.
 
 # --- build: install all deps, build shared -> frontend -> backend, prune ------
-FROM node:22.22.3-bookworm-slim AS build
+FROM node:24.19.0-bookworm-slim AS build
 WORKDIR /app
 
 # Toolchain for native module rebuilds (argon2's source fallback). Lives only in
@@ -36,7 +36,7 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # --- runtime: slim image carrying only the built app + prod node_modules ------
-FROM node:22.22.3-bookworm-slim
+FROM node:24.19.0-bookworm-slim
 ENV NODE_ENV=production \
     PORT=4000 \
     FRONTEND_DIST=/app/packages/frontend/dist
