@@ -41,6 +41,14 @@ function renderWithFake(props: Record<string, unknown> = {}) {
 }
 
 describe('UploadProgress', () => {
+  it('shows a queued state at pct:0 before processing starts', () => {
+    const { es } = renderWithFake();
+    es().emit({ type: 'progress', pct: 0 });
+    flushSync();
+    expect(screen.getByText('In Warteschlange…')).toBeInTheDocument();
+    expect(screen.queryByText(/Wird hochgeladen/)).toBeNull();
+  });
+
   it('shows the progress percentage', () => {
     const { es } = renderWithFake();
     es().emit({ type: 'progress', pct: 42 });

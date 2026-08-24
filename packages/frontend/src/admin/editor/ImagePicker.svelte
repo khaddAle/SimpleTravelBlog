@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import type { ImageDto } from '@stb/shared';
-  import { api } from '../../lib/api.js';
+  import type { ImageDto, UploadAccepted } from '@stb/shared';
+  import { api, ApiError } from '../../lib/api.js';
   import type { EventSourceFactory } from '../../lib/uploads.js';
   import {
     rememberedSort,
@@ -79,6 +79,12 @@
   const ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,image/heif';
   // Cap simultaneous uploads so a large multi-select doesn't saturate the link.
   const MAX_CONCURRENT_UPLOADS = 3;
+  // The server replies 429 once its accepted-upload backlog is full; back off
+  // and retry the same file rather than failing it, so the workers self-throttle
+  // to the server's drain rate.
+  const UPLOAD_MAX_RETRIES = 5;
+  const UPLOAD_BACKOFF_BASE_MS = 500;
+  const UPLOAD_BACKOFF_CAP_MS = 5000;
 
   const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)));
 
@@ -156,12 +162,34 @@
       const key = crypto.randomUUID();
       jobs = [...jobs, { key, filename: file.name, uploadId: null, error: null }];
       try {
-        const accepted = await api.uploadImage(file);
+        const accepted = await uploadWithBackoff(file);
         patchJob(key, { uploadId: accepted.uploadId });
       } catch (err) {
         patchJob(key, {
           error: err instanceof Error ? err.message : 'Upload fehlgeschlagen',
         });
+      }
+    }
+  }
+
+  /**
+   * Upload one file, retrying on the server's 429 backpressure with capped
+   * exponential backoff + jitter. Any other error, or exhausted retries,
+   * rejects — the worker then marks the job failed as before.
+   */
+  async function uploadWithBackoff(file: File): Promise<UploadAccepted> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await api.uploadImage(file);
+      } catch (err) {
+        const retryable = err instanceof ApiError && err.status === 429;
+        if (!retryable || attempt >= UPLOAD_MAX_RETRIES) throw err;
+        const backoff = Math.min(
+          UPLOAD_BACKOFF_CAP_MS,
+          UPLOAD_BACKOFF_BASE_MS * 2 ** attempt,
+        );
+        const wait = backoff / 2 + Math.random() * (backoff / 2);
+        await new Promise((resolve) => setTimeout(resolve, wait));
       }
     }
   }

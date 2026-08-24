@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import type { ImageDto } from '@stb/shared';
-import { api } from '../../lib/api.js';
+import { api, ApiError } from '../../lib/api.js';
 import type { EventSourceLike } from '../../lib/uploads.js';
 import { clearRememberedSorts } from '../imageSortMemory.js';
 import ImagePicker from './ImagePicker.svelte';
@@ -404,6 +404,40 @@ describe('ImagePicker multi-upload', () => {
 
     await user.click(screen.getByRole('button', { name: 'Auswählen' }));
     expect(onSelect).toHaveBeenCalledWith(['img1', 'img2']);
+  });
+
+  it('retries a 429-throttled upload instead of failing the file', async () => {
+    const user = userEvent.setup();
+    let calls = 0;
+    vi.spyOn(api, 'uploadImage').mockImplementation(async () => {
+      calls += 1;
+      if (calls === 1) throw new ApiError(429, 'too_many_uploads', { error: 'too_many_uploads' });
+      return { uploadId: 'up1', imageId: 'img1' };
+    });
+    const sources: Record<string, FakeEventSource> = {};
+    const onSelect = vi.fn();
+    render(ImagePicker, {
+      onSelect,
+      onCancel: vi.fn(),
+      eventSourceFactory: (url: string) => {
+        const id = url.split('/')[4]!;
+        const s = new FakeEventSource(url);
+        sources[id] = s;
+        return s;
+      },
+    });
+    await screen.findByLabelText('alpha.jpg');
+
+    await user.upload(screen.getByLabelText('Hochladen'), jpeg('neu.jpg'));
+
+    // First call 429s; the worker backs off and retries, reaching the SSE stage.
+    await waitFor(() => expect(sources['up1']).toBeDefined());
+    expect(api.uploadImage).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    sources['up1']!.emit({ type: 'done', image: makeImage('img1', 'neu.jpg') });
+    await user.click(screen.getByRole('button', { name: 'Auswählen' }));
+    expect(onSelect).toHaveBeenCalledWith(['img1']);
   });
 
   it('uploads at most three files concurrently', async () => {

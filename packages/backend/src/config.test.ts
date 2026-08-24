@@ -20,6 +20,18 @@ describe('loadConfig', () => {
     expect(cfg.s3.forcePathStyle).toBe(true);
     expect(cfg.s3.region).toBe('us-east-1');
     expect(cfg.maxUploadBytes).toBe(20 * 1024 * 1024);
+    expect(cfg.imagePipelineConcurrency).toBe(3);
+    expect(cfg.imageUploadMaxBacklog).toBe(32);
+  });
+
+  it('parses overridden pipeline-concurrency and upload-backlog ceilings', () => {
+    const cfg = loadConfig({
+      ...base,
+      IMAGE_PIPELINE_CONCURRENCY: '5',
+      IMAGE_UPLOAD_MAX_BACKLOG: '64',
+    });
+    expect(cfg.imagePipelineConcurrency).toBe(5);
+    expect(cfg.imageUploadMaxBacklog).toBe(64);
   });
 
   it('coerces numeric and boolean env strings', () => {

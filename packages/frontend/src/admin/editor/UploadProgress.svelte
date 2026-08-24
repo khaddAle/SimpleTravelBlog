@@ -48,7 +48,13 @@
 <div class="upload-progress" data-status={status}>
   {#if status === 'uploading'}
     <progress max="100" value={pct}></progress>
-    <span>Wird hochgeladen… {pct}%</span>
+    <!-- pct is uniquely 0 only before processing starts (first real event is
+         pct:10), so it doubles as the "queued behind the concurrency cap" state. -->
+    {#if pct === 0}
+      <span>In Warteschlange…</span>
+    {:else}
+      <span>Wird hochgeladen… {pct}%</span>
+    {/if}
   {:else if status === 'done'}
     <span class="ok">Hochgeladen.</span>
   {:else}

@@ -59,7 +59,9 @@ export interface TestApp {
  * Mongo is provided separately by `useTestDatabase()`, so MONGO_URI here is only
  * a placeholder.
  */
-export async function buildTestApp(): Promise<TestApp> {
+export async function buildTestApp(
+  envOverrides: Record<string, string | undefined> = {},
+): Promise<TestApp> {
   const redis = new RedisMock() as unknown as Redis;
   const storage = createMemoryStorage();
   const config = loadConfig({
@@ -71,6 +73,7 @@ export async function buildTestApp(): Promise<TestApp> {
     S3_SECRET_KEY: 'secret',
     SESSION_COOKIE_SECRET: 'x'.repeat(32),
     CSRF_COOKIE_SECRET: 'y'.repeat(32),
+    ...envOverrides,
   });
   const app = await buildApp({ redis, config, storage });
   await app.ready();

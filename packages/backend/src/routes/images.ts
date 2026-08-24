@@ -28,9 +28,16 @@ function thumbKeyFor(imageId: string): string {
 }
 
 export function registerImageRoutes(app: FastifyInstance, ctx: RouteContext): void {
-  const { hooks, storage, progress } = ctx;
+  const { hooks, storage, progress, limiter } = ctx;
   const auth = { preHandler: hooks.requireAuth };
   const mutate = { preHandler: [hooks.requireAuth, hooks.requireCsrf] };
+
+  // Ceiling on accepted-but-unprocessed uploads. Each holds its original buffer
+  // until a pipeline slot frees, so this bounds the memory queued uploads pin.
+  // Checked-and-incremented synchronously (no await between read and `++`), so
+  // it is a firm ceiling, not a racy one.
+  const maxBacklog = ctx.config.imageUploadMaxBacklog;
+  let acceptedInFlight = 0;
 
   /** Background: transcode → store both variants → persist → emit done/error. */
   async function runPipeline(args: {
@@ -82,26 +89,54 @@ export function registerImageRoutes(app: FastifyInstance, ctx: RouteContext): vo
     if (!ALLOWED_MIME.has(file.mimetype)) {
       throw app.httpErrors.unsupportedMediaType(`unsupported type ${file.mimetype}`);
     }
-    const buffer = await file.toBuffer();
 
-    const imageId = await generateUniqueShortId(
-      async (id) => (await Image.exists({ shortId: id })) != null,
-    );
-    const uploadId = randomUUID();
-    await progress.create(uploadId);
+    if (acceptedInFlight >= maxBacklog) {
+      // Drain the multipart stream so the connection closes cleanly without
+      // buffering the body we are about to reject.
+      file.file.resume();
+      reply.header('Retry-After', '2').code(429);
+      return { error: 'too_many_uploads' };
+    }
+    acceptedInFlight++; // reserve synchronously, before the first await
 
-    // Fire-and-forget; the client tracks completion over the SSE channel.
-    void runPipeline({
-      uploadId,
-      imageId,
-      buffer,
-      filename: file.filename,
-      mime: file.mimetype,
-      uploaderId: req.authUser!.id,
-    });
+    try {
+      const buffer = await file.toBuffer();
 
-    reply.code(202);
-    return { uploadId, imageId };
+      const imageId = await generateUniqueShortId(
+        async (id) => (await Image.exists({ shortId: id })) != null,
+      );
+      const uploadId = randomUUID();
+      await progress.create(uploadId);
+      // Warm the progress TTL and drive a visible "queued" state before we wait
+      // for a pipeline slot. Modeled as a plain progress event so it flows
+      // through the existing SSE handler without a schema/guard change.
+      await progress.publish(uploadId, { type: 'progress', pct: 0 });
+
+      // Fire-and-forget behind the concurrency cap; the client tracks completion
+      // over the SSE channel. Wrapping the whole pipeline bounds the buffer's
+      // hold time to the slot, and runPipeline never rejects (internal
+      // try/catch → SSE error event), so `.finally` reliably decrements.
+      void limiter
+        .run(() =>
+          runPipeline({
+            uploadId,
+            imageId,
+            buffer,
+            filename: file.filename,
+            mime: file.mimetype,
+            uploaderId: req.authUser!.id,
+          }),
+        )
+        .finally(() => {
+          acceptedInFlight--;
+        });
+
+      reply.code(202);
+      return { uploadId, imageId };
+    } catch (err) {
+      acceptedInFlight--; // release on a pre-run failure (e.g. toBuffer size limit)
+      throw err;
+    }
   });
 
   app.get<{ Params: { uploadId: string } }>(

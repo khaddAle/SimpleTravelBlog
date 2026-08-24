@@ -2,11 +2,13 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import sensible from '@fastify/sensible';
 import multipart from '@fastify/multipart';
+import sharp from 'sharp';
 import type { Redis } from 'ioredis';
 import type { Config } from './config.js';
 import { createAuthHooks } from './auth/requireAuth.js';
 import { createStorage, type ObjectStorage } from './storage/s3.js';
 import { createProgressHub, type ProgressHub } from './images/progress.js';
+import { createSemaphore, type Semaphore } from './lib/semaphore.js';
 import type { RouteContext } from './routes/context.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerRobots } from './robots.js';
@@ -28,6 +30,8 @@ export interface AppDeps {
   storage?: ObjectStorage;
   /** Injectable for tests; defaults to a fresh in-process hub. */
   progress?: ProgressHub;
+  /** Injectable for tests/observation; defaults to one sized from config. */
+  limiter?: Semaphore;
   /**
    * Absolute path to the built SPA (`packages/frontend/dist`). When set, the app
    * also serves the static frontend with an index.html fallback for client
@@ -43,6 +47,11 @@ export interface AppDeps {
  */
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: deps.logger ?? false, trustProxy: true });
+
+  // Pin libvips to one thread per pipeline: without this each concurrent sharp
+  // decode spawns `cores` threads, multiplying CPU and memory. Global and
+  // idempotent, so a per-buildApp call is harmless in tests.
+  sharp.concurrency(1);
 
   await app.register(sensible);
   await app.register(cookie);
@@ -61,6 +70,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     hooks,
     storage: deps.storage ?? createStorage(deps.config.s3),
     progress: deps.progress ?? createProgressHub(deps.redis),
+    limiter: deps.limiter ?? createSemaphore(deps.config.imagePipelineConcurrency),
   };
 
   registerRobots(app);

@@ -69,6 +69,13 @@ const envSchema = z.object({
     .int()
     .positive()
     .default(20 * 1024 * 1024),
+
+  // How many image pipelines (sharp decodes) may run at once, process-wide.
+  // Bounds peak memory independently of the client's upload burst rate.
+  IMAGE_PIPELINE_CONCURRENCY: z.coerce.number().int().positive().default(3),
+  // Ceiling on accepted-but-unprocessed uploads; past it the route replies 429
+  // so the client backs off, bounding the memory held by queued buffers.
+  IMAGE_UPLOAD_MAX_BACKLOG: z.coerce.number().int().positive().default(32),
 });
 
 export type Config = {
@@ -97,6 +104,8 @@ export type Config = {
   sessionTtlSeconds: number;
   adminBootstrap?: { username: string; password: string };
   maxUploadBytes: number;
+  imagePipelineConcurrency: number;
+  imageUploadMaxBacklog: number;
 };
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -144,5 +153,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
         }
       : {}),
     maxUploadBytes: e.MAX_UPLOAD_BYTES,
+    imagePipelineConcurrency: e.IMAGE_PIPELINE_CONCURRENCY,
+    imageUploadMaxBacklog: e.IMAGE_UPLOAD_MAX_BACKLOG,
   };
 }
