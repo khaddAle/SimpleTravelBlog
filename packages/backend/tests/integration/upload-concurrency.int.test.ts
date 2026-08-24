@@ -92,8 +92,13 @@ describe('upload concurrency + backlog gating', () => {
     ({ app } = await buildTestApp({ IMAGE_PIPELINE_CONCURRENCY: '3' }));
     auth = await authedAgent(app);
 
-    // Fire more uploads than the cap; all are accepted (202) immediately.
-    const accepted = await Promise.all(Array.from({ length: 6 }, (_, i) => upload(i)));
+    // Fire more uploads than the cap. Issue them SEQUENTIALLY, not via
+    // Promise.all: each POST returns 202 immediately and the pipeline runs
+    // detached, so all 6 still end up parked at the barrier concurrently — while
+    // avoiding the ECONNRESET race that concurrent supertest requests hit against
+    // a non-listening server (supertest listens/closes the server per request).
+    const accepted: Awaited<ReturnType<typeof upload>>[] = [];
+    for (let i = 0; i < 6; i++) accepted.push(await upload(i));
     for (const res of accepted) expect(res.status).toBe(202);
 
     // With the barrier held, exactly the cap should be decoding at once.
@@ -104,11 +109,8 @@ describe('upload concurrency + backlog gating', () => {
 
     // Release and confirm every upload drains to a terminal `done`.
     release();
-    const uploadIds = accepted.map((r) => r.body.uploadId as string);
-    const streams = await Promise.all(
-      uploadIds.map((id) => auth.agent.get(`/api/images/upload/${id}/progress`)),
-    );
-    for (const sse of streams) {
+    for (const res of accepted) {
+      const sse = await auth.agent.get(`/api/images/upload/${res.body.uploadId}/progress`);
       expect(parseSse(sse.text).some((e) => e.type === 'done')).toBe(true);
     }
     expect(peak).toBe(3);
@@ -131,20 +133,23 @@ describe('upload concurrency + backlog gating', () => {
     expect(c.headers['retry-after']).toBe('2');
     expect(c.body.error).toBe('too_many_uploads');
 
-    // Drain the two in-flight uploads.
+    // Drain the two in-flight uploads (sequentially — see the note in the
+    // concurrency test about the supertest per-request listen/close race).
     release();
-    await Promise.all(
-      [a, b].map((r) => auth.agent.get(`/api/images/upload/${r.body.uploadId}/progress`)),
-    );
+    for (const r of [a, b]) {
+      await auth.agent.get(`/api/images/upload/${r.body.uploadId}/progress`);
+    }
 
     // Counter is back to 0: a fresh burst up to the backlog is accepted again,
     // never spuriously 429'd.
     resetBarrier();
-    const again = await Promise.all([upload(4), upload(5)]);
+    const again: Awaited<ReturnType<typeof upload>>[] = [];
+    again.push(await upload(4));
+    again.push(await upload(5));
     for (const res of again) expect(res.status).toBe(202);
     release();
-    await Promise.all(
-      again.map((r) => auth.agent.get(`/api/images/upload/${r.body.uploadId}/progress`)),
-    );
+    for (const r of again) {
+      await auth.agent.get(`/api/images/upload/${r.body.uploadId}/progress`);
+    }
   });
 });
