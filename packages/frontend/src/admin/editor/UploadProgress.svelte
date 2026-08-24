@@ -18,17 +18,21 @@
   let pct = $state(0);
   let status = $state<'uploading' | 'done' | 'error'>('uploading');
   let message = $state('');
+  let reconnecting = $state(false);
 
   $effect(() => {
     status = 'uploading';
     pct = 0;
+    reconnecting = false;
     const off = subscribeUploadProgress(
       uploadId,
       {
         onProgress: (value) => {
+          reconnecting = false;
           pct = value;
         },
         onDone: (image) => {
+          reconnecting = false;
           pct = 100;
           status = 'done';
           onDone?.(image);
@@ -37,6 +41,9 @@
           status = 'error';
           message = msg;
           onError?.(msg);
+        },
+        onReconnecting: () => {
+          reconnecting = true;
         },
       },
       eventSourceFactory,
@@ -50,7 +57,9 @@
     <progress max="100" value={pct}></progress>
     <!-- pct is uniquely 0 only before processing starts (first real event is
          pct:10), so it doubles as the "queued behind the concurrency cap" state. -->
-    {#if pct === 0}
+    {#if reconnecting}
+      <span>Verbindung wird wiederhergestellt…</span>
+    {:else if pct === 0}
       <span>In Warteschlange…</span>
     {:else}
       <span>Wird hochgeladen… {pct}%</span>

@@ -13,6 +13,9 @@ class FakeEventSource implements EventSourceLike {
   emit(data: unknown): void {
     this.onmessage?.({ data: JSON.stringify(data) });
   }
+  fail(): void {
+    this.onerror?.(new Event('error'));
+  }
   close(): void {
     this.closed = true;
   }
@@ -72,5 +75,32 @@ describe('UploadProgress', () => {
     flushSync();
     expect(screen.getByRole('alert')).toHaveTextContent('Fehler: kaputt');
     expect(onError).toHaveBeenCalledWith('kaputt');
+  });
+
+  it('shows a reconnecting state on a transient drop, then returns to progress', () => {
+    vi.useFakeTimers();
+    try {
+      const onError = vi.fn();
+      const { es } = renderWithFake({ onError });
+      es().emit({ type: 'progress', pct: 42 });
+      flushSync();
+
+      es().fail();
+      flushSync();
+      expect(
+        screen.getByText('Verbindung wird wiederhergestellt…'),
+      ).toBeInTheDocument();
+      expect(onError).not.toHaveBeenCalled();
+
+      vi.runOnlyPendingTimers();
+      es().emit({ type: 'progress', pct: 70 });
+      flushSync();
+      expect(screen.getByText(/70%/)).toBeInTheDocument();
+      expect(
+        screen.queryByText('Verbindung wird wiederhergestellt…'),
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
