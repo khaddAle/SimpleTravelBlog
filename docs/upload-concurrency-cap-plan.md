@@ -98,12 +98,51 @@ room for 2 replicas per env. Both dev and prod inherit this from base.
 ## Rollout / de-risking
 
 1. ✅ Implement behind the two env vars via TDD (this change).
-2. Ship to **`travelblog-dev`** first; replay a burst while watching
-   `container_memory_working_set_bytes{namespace="travelblog-dev"}` — confirm the
-   staircase flattens and stays well under the limit, and that 429s (if any)
-   drain cleanly.
-3. Apply the memory bump in the deploy repo (dev), verify, then promote the
-   image tag + limit change to **prod** via the `travelblog-release` flow.
+2. ✅ Ship to **`travelblog-dev`** first and replay a burst — see *Dev
+   validation* below.
+3. ✅ Apply the memory bump in the deploy repo (both envs, via `base`); verify on
+   dev; then promote the image tag to **prod** via the `travelblog-release` flow.
+
+## Dev validation (2026-08-24)
+
+Released as `v0.14.0`; two identical 60-image bursts against `travelblog-dev`
+(high-megapixel iPhone JPEGs), watching
+`container_memory_working_set_bytes{namespace="travelblog-dev",container="travel-blog"}`.
+
+| | Burst 1 — **768 Mi** limit | Burst 2 — **1.25 Gi** limit |
+|---|---|---|
+| Peak / pod | ~649 (survivor) / **>768 → OOMKilled** | **686 / 677 MiB** |
+| Restarts | 1 (OOM) | 0 |
+| UI errors | 10+ "Verbindung unterbrochen" | none |
+| 429 gate | never fired | never fired |
+| Limit utilisation | crossed 100% → kill | ~54% |
+
+Findings:
+
+- **The true peak for a 60-image burst is ~650–800 MiB**, varying with how the
+  heaviest decodes align on a pod. That band straddles 768 Mi, so burst 1 was a
+  coin-flip: one pod landed at 649 and lived, the other crossed 768 and was
+  OOMKilled — its connection resets surfaced as non-recovering
+  "Verbindung unterbrochen" SSE errors (same class as the prod incident). At
+  1.25 Gi both pods peaked ~685 and drained cleanly (slow reclaim 633→617 over
+  ~3 min — the expected staircase release, not a leak).
+- **Both fixes were load-bearing, neither alone sufficed at 768 Mi.** The
+  concurrency cap *bounds* the peak to ~685 MiB (without it, 60 parallel decodes
+  blow past any limit — the original incident); the memory bump provides the
+  headroom over that bounded peak. 768 Mi was simply below the bounded worst case.
+- **The 429 backlog gate never engaged** in either burst — one browser's 3 upload
+  workers never pile up 32 accepted uploads. It is defence-in-depth (and what
+  makes worst-case memory a *hard* bound for adversarial/multi-client bursts),
+  but the concurrency cap + headroom are what carried this workload.
+
+Available levers if a heavier burst ever crowds the limit (not currently needed;
+~595 MiB margin at 1.25 Gi): drop `IMAGE_PIPELINE_CONCURRENCY` to 2 (cuts per-pod
+decode peak ~⅓, env-only), or raise the limit toward 1.5 Gi (not reserved).
+
+Known follow-up (not blocking): the client (`packages/frontend/src/lib/uploads.ts`)
+treats any SSE `onerror` as terminal, so a transient stream drop (rollout, network
+blip) permanently red-marks an upload that may have succeeded server-side. Make it
+tolerate/reconnect on SSE error.
 
 ## Risk summary
 
