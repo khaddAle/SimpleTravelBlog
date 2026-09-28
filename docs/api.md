@@ -2,7 +2,7 @@
 
 The zod schemas in `packages/shared/src/api.ts` are the **source of truth** for
 request/response shapes; this page is the high-level map. All ids in the API are
-opaque shortIds (posts, trips, images) — never Mongo ObjectIds — except user ids,
+opaque shortIds (posts, trips, images, tracks) — never Mongo ObjectIds — except user ids,
 which are ObjectIds on the admin endpoints.
 
 ## Conventions
@@ -36,6 +36,10 @@ which are ObjectIds on the admin endpoints.
 | GET | `/api/images` | Paginated. Query: `imageListQuerySchema` (`q`, `orphansOnly`, `sort`). |
 | GET | `/api/images/:shortId/usage` | Posts referencing the image. |
 | DELETE | `/api/images/:shortId` | `409 { error:'image_in_use', posts }` if referenced. |
+| POST | `/api/tracks/upload` | Multipart `.gpx` (`415` otherwise) → `201` `trackDtoSchema` (name, stats). `400` with a German message for bad GPX, incl. GPX without timestamps. Parsed synchronously; the raw GPX is kept in storage. |
+| GET | `/api/tracks/:shortId` | Track DTO. |
+| DELETE | `/api/tracks/:shortId` | `409 { error:'track_in_use', posts }` if referenced. |
+| POST | `/api/tracks/preview` | `trackPreviewRequestSchema` (tracks, offset, imageIds) → where each photo lands + the suggested UTC offset. |
 | GET | `/api/settings` | Branding (defaults before first save). |
 | PUT | `/api/settings` | Upsert branding. Body: `settingsDtoSchema`. |
 
@@ -54,6 +58,7 @@ which are ObjectIds on the admin endpoints.
 | GET | `/api/public/posts` | Published posts, paginated (full DTOs). |
 | GET | `/api/public/posts/heads` | Published post **heads** (no `blocks`), newest first; `?limit`. Feeds list views (landing, archive, next-post). → `{ posts: PublicPostHead[] }`. |
 | GET | `/api/public/posts/:shortId` | Single published post (`404` for drafts). Carries an `images` sidecar map `{ [imageId]: { width, height } }` for the image/gallery blocks it references — server-provided dimensions so the reader renders orientation-aware (portrait) singles and shortest-column masonry galleries with no layout shift. List/search responses omit it. |
+| GET | `/api/public/posts/:shortId/tracks` | `publicTrackDataSchema`: thinned track points, stats, moving intervals and the computed photo placement (`imageId`, track, time, where) — no filenames or capture times. `404` without tracks. Loaded lazily by the post page. |
 | GET | `/api/public/search` | `searchQuerySchema`: folded substring + country + trip + date range. |
 | GET | `/api/public/facets` | `{ countries, months }` for the Suche filters — server-computed so the options stay complete past the first page. |
 | GET | `/api/public/trips` | Trips that have ≥1 published post. |

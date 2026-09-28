@@ -35,7 +35,7 @@ runtime from Node 22 to 24; `npm audit` reports 0 vulnerabilities.
 | `nanoid` | `5.1.16` | 6-char post/trip shortIds. |
 | `pino` | `10.3.1` | Structured JSON logs to stdout. |
 | `zod` | `4.4.3` | Env-var schema + API request validation. |
-| `cheerio` | `1.2.0` | WP HTML → block parsing in importer. |
+| `cheerio` | `1.2.0` | WP HTML → block parsing in importer; GPX parsing in XML mode (`src/tracks/gpx.ts`). |
 | `cookie-signature` | `1.2.2` | Cookie signing (`SESSION_COOKIE_SECRET`). |
 | `p-limit` | `7.3.1` | Concurrency cap for importer media re-uploads. |
 | `dotenv` | `17.4.2` | Local-dev env loading; ignored in container. |
@@ -69,7 +69,7 @@ were declared but never imported, and were removed on 2026-08-13.
 | `vite` | `8.1.5` | Bundler + dev server. |
 | `@sveltejs/vite-plugin-svelte` | `7.2.0` | Svelte 5 + Vite 8. |
 | `svelte-spa-router` | `5.1.1` | Hash routing. |
-| `leaflet` | `1.9.4` | Map. |
+| `leaflet` | `1.9.4` | Map. Track maps use OpenTopoMap tiles and switch to the standard OSM tiles after 3 tile errors (no SLA; `lib/track/tiles.ts`). |
 | `@types/leaflet` | `1.9.21` | |
 
 ## Frontend devDependencies

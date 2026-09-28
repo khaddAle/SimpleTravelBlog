@@ -39,6 +39,7 @@ This project replaces it with a small, self-hosted, family-scale travel blog on 
 
 - **Post**: title, subtitle, ordered list of blocks, post date, country, place name, lat/lng, optional trip reference, draft/published state.
 - **Block types**: Title, Subtitle, Paragraph, Image (with optional caption), Image Gallery, Quote, Divider.
+- **GPS track**: 0–2 per post, one per person, uploaded as GPX (with timestamps). Each post track has a label (e.g. the person) and, with two tracks, a filename prefix that assigns photos to a person. One UTC offset per post turns the photos' naive capture times into track times.
 - **Trip**: just a name. Country/date range derived from member posts.
 - **Image asset**: original is not kept; stored as two WebP variants — display (≤1600 px long edge) and thumbnail (≤400 px). Tracks filename, upload date, uploader, references from posts, and the EXIF capture date (`takenAt`, read before metadata is stripped) for the "Aufnahmedatum" sort. The capture date is the only metadata retained, and only in the database — GPS and all other EXIF are still dropped from the stored objects.
 - **URLs**: opaque short IDs, e.g. `/p/a3kf2`. Stable across renames.
@@ -50,6 +51,7 @@ This project replaces it with a small, self-hosted, family-scale travel blog on 
 - **Archive**: multi-open accordion grouped by Reise / Land / Jahr (toggle), newest first — closed by default, open-state + grouping persisted across visits, bulk expand/collapse, and a `?reise=` deep-link from a post's Reise link.
 - **Search**: filterable — text + country + trip + date range.
 - **Post page**: blocks rendered in order, minimal chrome, image-first — portrait images shown narrow/centered and uncropped, galleries as a no-crop masonry, with bidirectional prev/next neighbours and a link back to the post's Reise.
+- **GPS track** (posts with tracks): under the article header a static topo map (OpenTopoMap, OSM fallback) with the elevation profile and stats (distance, ascent, descent, moving time). "Vergrößern" opens a full-screen view: follow a person, hover/drag the profile, replay at 10–600× (pauses > 5 min skipped in ~1 s), and optional photo spots — during replay each photo opens on its spot for 5 s.
 - **Language**: German UI and content.
 
 ## Editor experience
@@ -59,6 +61,7 @@ This project replaces it with a small, self-hosted, family-scale travel blog on 
 - **Draft / Published**: posts start as draft; explicit Publish action; can be unpublished. Edits autosave to a draft snapshot (a published post keeps serving its live version until "Veröffentlichen" promotes the draft; "Änderungen verwerfen" discards it).
 - **Image upload pipeline**: JPEG / PNG / HEIC / WebP, max ~20 MB. Server transcodes to WebP display + thumb. Original discarded.
 - **Image picker**: library or upload-new; filename search, date sort/filter, used-in-post filter; bulk delete refuses referenced images; orphan view; per-image "where used".
+- **GPS-Tracks panel**: upload up to two GPX files (without timestamps → rejected), label each, set the filename prefix and the photos' time zone (prefilled from a longitude/summer-time suggestion). A live summary shows where the post's photos land (per person, at start, at end).
 - **Branding settings**: site title, logo upload, single accent color.
 
 ## Migration from existing WordPress

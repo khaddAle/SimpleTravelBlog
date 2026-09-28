@@ -116,12 +116,14 @@ sequenceDiagram
 
 ### Delete-if-referenced guard
 
-Trips and images cannot be deleted while content points at them. `DELETE
-/api/trips/:id` checks for posts with that `tripId`; `DELETE /api/images/:id`
-scans post blocks (image + gallery references). If any referrer exists the route
-responds `409` with the list of referencing posts (`{ id, title }`) instead of
-deleting — the editor's "where used" view (`GET /api/images/:id/usage`) surfaces
-the same data.
+Trips, images and GPS tracks cannot be deleted while content points at them.
+`DELETE /api/trips/:id` checks for posts with that `tripId`; `DELETE
+/api/images/:id` scans post blocks (image + gallery references); `DELETE
+/api/tracks/:id` checks the posts' tracks and their draft snapshots. If any
+referrer exists the route responds `409` with the list of referencing posts
+(`{ id, title }`) instead of deleting — the editor's "where used" view
+(`GET /api/images/:id/usage`) surfaces the same data. Unreferenced tracks are
+removed together with unused images by the library's bulk "unused" delete.
 
 ## Data model
 
@@ -145,6 +147,7 @@ erDiagram
   USER ||--o{ IMAGE : uploads
   TRIP ||--o{ POST  : groups
   POST }o--o{ IMAGE : references
+  POST }o--o{ TRACK : "tracks (0-2)"
 
   USER {
     string username "unique, lowercased"
@@ -168,6 +171,17 @@ erDiagram
     date   publishedAt "set on first publish"
     string searchText "denormalized, german text index"
     object draft "optional autosave snapshot; readers never see it"
+    array  tracks "0-2 { trackId, label, prefix? }"
+    number utcOffsetMinutes "optional, photos' time zone"
+  }
+  TRACK {
+    string shortId "unique"
+    string originalFilename
+    string name "from GPX"
+    object stats "distance, ascent, descent, movingMs, start, end, ele range"
+    array  moving "[start, end] intervals"
+    array  points "thinned [lat, lon, ele, s, m] rows"
+    string gpxKey "raw GPX in storage"
   }
   TRIP {
     string shortId "unique"
@@ -193,7 +207,21 @@ erDiagram
 
 Indexes: `User.username` unique · `Post.shortId` unique, `postDate -1`,
 `country`, `tripId`, `searchText` text (german) · `Trip.shortId`+`name` unique ·
-`Image.shortId` unique.
+`Image.shortId` unique · `Track.shortId` unique.
+
+### GPS tracks
+
+The pure track logic lives in `packages/shared/src/track/` so upload and reader
+use the same code: `build` (distance, ±20 m height smoothing, ascent/descent,
+moving time and intervals), `simplify` (time-synchronized thinning, 2 m / 1 m
+tolerance), `interpolate` (position at a time, time at a distance), `photos`
+(assign by filename prefix, place by capture time) and `timezone` (offset
+suggestion). On upload the backend (`src/tracks/`) parses the GPX with cheerio
+in XML mode, computes the stats on the **full** track and stores only the
+thinned rows; the raw GPX goes to storage so tracks can be reprocessed.
+Photo placement (`src/tracks/placement.ts`) runs at read time from the images'
+`takenAt` + filename and the post's UTC offset, so the public route only sends
+the result.
 
 ### Infrastructure adapters
 - **Redis** (`src/redis/`): Sentinel-aware client factory; session store
@@ -216,8 +244,9 @@ flowchart TD
   ROUTER --> READER[Reader pages<br/>Landing · Post · Archive · MapPage · Search]
   ROUTER --> ADMIN[Admin pages<br/>Login · PostList · PostEditor · Users · Settings · ImageLibrary]
   READER --> CARD[PostCard] --> BR[BlockRenderer]
+  READER --> TRACK[track/<br/>TrackMap · ElevationProfile · TrackStats · TrackDialog]
   BR --> BLOCKS[Title/Subtitle/Paragraph/Image/Gallery/Quote/Divider]
-  ADMIN --> ED[editor/<br/>BlockEditor · MetadataSidebar · ImagePicker · MapPicker · UploadProgress]
+  ADMIN --> ED[editor/<br/>BlockEditor · MetadataSidebar · TrackPanel · ImagePicker · MapPicker · UploadProgress]
   READER & ADMIN --> API[lib/api.ts]
   ED --> API
   API -->|fetch + cookie + X-CSRF-Token| BE[(Backend API)]
@@ -252,6 +281,14 @@ flowchart TD
   shortest-column **masonry** (`lib/masonry.ts`, reactive 3/2/1 columns by
   breakpoint). Both reuse `Photo`'s global `.photo`/`.frame` classes via inline
   `aspect-ratio` rather than modifying the framed `Photo` primitive.
+- **GPS tracks** (`components/track/`, `lib/track/`) — `TrackMap` fetches
+  `/api/public/posts/:id/tracks` lazily and draws a static Leaflet map (topo
+  tiles with OSM fallback, `lib/track/tiles.ts`), the SVG `ElevationProfile` and
+  `TrackStats`. `TrackDialog` is the enlarged view (Lightbox pattern, z-index
+  2000): follow toggle, profile hover/seek, replay and photo card with a leader
+  line. The replay loop is a DOM-free controller (`lib/track/replay.ts`: timeline,
+  gap skipping, 5 s photo hold) driven by `requestAnimationFrame`. The admin
+  `TrackPanel` in `PostEditor` uploads GPX and previews the photo placement.
 - **Routing/guard** — admin routes redirect to `/login` when unauthenticated;
   the editor reaches images/galleries through a Promise-based picker bridge.
   `lib/navGuard.ts` confirms in-app departures while edits aren't yet autosaved.
