@@ -13,19 +13,30 @@ describe('cardLayout', () => {
     expect(b.top + b.height).toBe(600 - 12);
   });
 
-  it('is about a third of the map wide, within 180–300 px', () => {
-    expect(cardLayout({ x: 0, y: 0 }, 1000, 800, 0.75).width).toBe(300);
-    expect(cardLayout({ x: 0, y: 0 }, 600, 800, 0.75).width).toBeCloseTo(216);
+  it('grows with the map: 30 % of its width, at least 180 px', () => {
+    expect(cardLayout({ x: 0, y: 0 }, 1000, 800, 0.75).width).toBeCloseTo(300);
+    expect(cardLayout({ x: 0, y: 0 }, 1960, 1000, 0.75).width).toBeCloseTo(588);
+    expect(cardLayout({ x: 0, y: 0 }, 600, 800, 0.75).width).toBeCloseTo(180);
     expect(cardLayout({ x: 0, y: 0 }, 600, 800, 0.75).compact).toBe(false);
   });
 
-  it('is smaller and compact on phone-sized maps', () => {
+  it('stops at 640 px on very large maps', () => {
+    expect(cardLayout({ x: 0, y: 0 }, 2600, 1400, 0.75).width).toBe(640);
+  });
+
+  it('keeps portrait photos to half the map height', () => {
+    const l = cardLayout({ x: 0, y: 0 }, 1960, 1000, 1.5);
+    expect(l.height).toBeCloseTo(500);
+    expect(l.width).toBeCloseTo((500 - 16 - 40) / 1.5 + 16);
+  });
+
+  it('is compact on phone-sized maps: 45 % wide, at least 130 px', () => {
     const phone = cardLayout({ x: 0, y: 0 }, 390, 500, 0.75);
     expect(phone.compact).toBe(true);
-    expect(phone.width).toBeCloseTo(156);
+    expect(phone.width).toBeCloseTo(175.5);
     // 4 px padding each side, one-line caption.
-    expect(phone.height).toBeCloseTo((156 - 8) * 0.75 + 8 + 28);
-    expect(cardLayout({ x: 0, y: 0 }, 300, 500, 0.75).width).toBe(130);
+    expect(phone.height).toBeCloseTo((175.5 - 8) * 0.75 + 8 + 28);
+    expect(cardLayout({ x: 0, y: 0 }, 250, 500, 0.75).width).toBe(130);
   });
 
   it('never grows taller than the map', () => {
