@@ -604,6 +604,10 @@
   }
   .tm-card.compact {
     padding: 4px;
+    box-shadow: none;
+  }
+  .tm-card.compact img {
+    border: 0;
   }
   .tm-card img {
     display: block;
