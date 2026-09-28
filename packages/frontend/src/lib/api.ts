@@ -13,6 +13,9 @@ import type {
   CreateUserRequest,
   UpdateUserRequest,
   UploadAccepted,
+  TrackDto,
+  TrackPreviewRequest,
+  TrackPreviewResponse,
 } from '@stb/shared';
 
 /** Header the backend's double-submit CSRF guard reads on mutations. */
@@ -302,6 +305,20 @@ export const api = {
   /** How many images are currently unused (for the bulk-delete confirm). */
   async unusedImageCount(): Promise<number> {
     return (await request<{ count: number }>('/api/images/unused/count')).count;
+  },
+  async unusedCounts(): Promise<{ images: number; tracks: number }> {
+    throw new Error('not implemented');
+  },
+
+  // --- tracks ---
+  async uploadTrack(_file: File): Promise<TrackDto> {
+    throw new Error('not implemented');
+  },
+  async getTrack(_id: string): Promise<TrackDto> {
+    throw new Error('not implemented');
+  },
+  async previewTracks(_req: TrackPreviewRequest): Promise<TrackPreviewResponse> {
+    throw new Error('not implemented');
   },
   /** Delete every unused image; returns how many were removed. */
   async deleteUnusedImages(): Promise<number> {

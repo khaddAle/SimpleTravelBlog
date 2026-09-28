@@ -96,6 +96,17 @@ beforeEach(() => {
   vi.spyOn(api, 'savePostDraft').mockResolvedValue({ savedAt: 'x', hasPendingDraft: false });
   vi.spyOn(api, 'publishPost').mockResolvedValue(samplePost({ status: 'published' }));
   vi.spyOn(api, 'discardDraft').mockResolvedValue(samplePost());
+  vi.spyOn(api, 'getTrack').mockImplementation(async (id) => ({
+    id,
+    originalFilename: `${id}.gpx`,
+    name: 'Lauf',
+    stats: { distance: 1, ascent: 1, descent: 1, movingMs: 1, start: 0, end: 1, minEle: 0, maxEle: 1 },
+  }));
+  vi.spyOn(api, 'previewTracks').mockResolvedValue({
+    suggestion: { offset: 120, reason: '0/0 Fotos im Track' },
+    utcOffsetMinutes: 120,
+    photos: [],
+  });
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -383,5 +394,58 @@ describe('PostEditor (edit)', () => {
     expect(await screen.findByLabelText('alpha.jpg')).toBeInTheDocument();
     // 'b' is already used by the post's gallery → hidden from the unused picker.
     expect(screen.queryByLabelText('beta.jpg')).toBeNull();
+  });
+});
+
+describe('PostEditor (GPS tracks)', () => {
+  it('seeds the track panel from the post and autosaves tracks with the body', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'getPost').mockResolvedValue(
+      samplePost({ tracks: [{ trackId: 't1', label: 'Anna' }], utcOffsetMinutes: 120 }),
+    );
+    const save = vi.spyOn(api, 'savePostDraft');
+    render(PostEditor, { params: { id: 'p1' } });
+
+    const label = await screen.findByLabelText('Bezeichnung');
+    expect(label).toHaveValue('Anna');
+    await user.type(label, 's');
+    await flushAutosave();
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith(
+        'p1',
+        expect.objectContaining({
+          tracks: [{ trackId: 't1', label: 'Annas' }],
+          utcOffsetMinutes: 120,
+        }),
+      ),
+    );
+  });
+
+  it('keeps tracks when other metadata changes', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'getPost').mockResolvedValue(
+      samplePost({ tracks: [{ trackId: 't1', label: 'Anna' }], utcOffsetMinutes: 120 }),
+    );
+    const save = vi.spyOn(api, 'savePostDraft');
+    render(PostEditor, { params: { id: 'p1' } });
+
+    await user.type(await screen.findByLabelText('Titel'), '!');
+    await flushAutosave();
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith(
+        'p1',
+        expect.objectContaining({ title: 'Berge!', tracks: [{ trackId: 't1', label: 'Anna' }] }),
+      ),
+    );
+  });
+
+  it('sends an empty track list for a post without tracks', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'getPost').mockResolvedValue(samplePost());
+    const save = vi.spyOn(api, 'savePostDraft');
+    render(PostEditor, { params: { id: 'p1' } });
+    await user.type(await screen.findByLabelText('Titel'), '!');
+    await flushAutosave();
+    await waitFor(() => expect(save).toHaveBeenCalledWith('p1', expect.objectContaining({ tracks: [] })));
   });
 });

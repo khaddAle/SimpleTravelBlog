@@ -173,7 +173,7 @@ describe('ImageLibrary', () => {
 
   it('asks to confirm and shows the count before deleting unused images', async () => {
     const user = userEvent.setup();
-    const count = vi.spyOn(api, 'unusedImageCount').mockResolvedValue(7);
+    const count = vi.spyOn(api, 'unusedCounts').mockResolvedValue({ images: 7, tracks: 0 });
     render(ImageLibrary);
     await user.click(await screen.findByRole('button', { name: 'Unbenutzte löschen' }));
     expect(count).toHaveBeenCalled();
@@ -181,9 +181,32 @@ describe('ImageLibrary', () => {
     expect(dialog).toHaveTextContent('7');
   });
 
+  it('mentions unused GPS tracks in the bulk-delete confirm', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'unusedCounts').mockResolvedValue({ images: 7, tracks: 2 });
+    render(ImageLibrary);
+    await user.click(await screen.findByRole('button', { name: 'Unbenutzte löschen' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent(
+      '7 unbenutzte Bilder und 2 unbenutzte GPS-Tracks werden unwiderruflich gelöscht.',
+    );
+  });
+
+  it('offers the bulk delete when only GPS tracks are unused', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'unusedCounts').mockResolvedValue({ images: 0, tracks: 1 });
+    const del = vi.spyOn(api, 'deleteUnusedImages').mockResolvedValue(0);
+    render(ImageLibrary);
+    await user.click(await screen.findByRole('button', { name: 'Unbenutzte löschen' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('1 unbenutzter GPS-Track wird unwiderruflich gelöscht.');
+    await user.click(within(dialog).getByRole('button', { name: 'Löschen' }));
+    expect(del).toHaveBeenCalled();
+  });
+
   it('bulk-deletes unused images after confirming and reloads', async () => {
     const user = userEvent.setup();
-    vi.spyOn(api, 'unusedImageCount').mockResolvedValue(7);
+    vi.spyOn(api, 'unusedCounts').mockResolvedValue({ images: 7, tracks: 0 });
     const del = vi.spyOn(api, 'deleteUnusedImages').mockResolvedValue(7);
     const list = vi.spyOn(api, 'listImages');
     render(ImageLibrary);
@@ -197,7 +220,7 @@ describe('ImageLibrary', () => {
 
   it('cancels the bulk-delete confirm without deleting', async () => {
     const user = userEvent.setup();
-    vi.spyOn(api, 'unusedImageCount').mockResolvedValue(7);
+    vi.spyOn(api, 'unusedCounts').mockResolvedValue({ images: 7, tracks: 0 });
     const del = vi.spyOn(api, 'deleteUnusedImages').mockResolvedValue(7);
     render(ImageLibrary);
     await user.click(await screen.findByRole('button', { name: 'Unbenutzte löschen' }));

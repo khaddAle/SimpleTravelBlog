@@ -176,6 +176,53 @@ describe('uploadImage', () => {
   });
 });
 
+describe('tracks', () => {
+  const dto = { id: 't1', originalFilename: 'lauf.gpx', name: 'Lauf', stats: {} };
+
+  it('uploadTrack posts FormData with the csrf header and returns the DTO', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(dto, { status: 201 }));
+    const file = new File(['<gpx/>'], 'lauf.gpx', { type: 'application/gpx+xml' });
+    expect(await api.uploadTrack(file)).toEqual(dto);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('/api/tracks/upload');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeInstanceOf(FormData);
+    expect(init.headers['x-csrf-token']).toBe('tok-123');
+  });
+
+  it('uploadTrack surfaces the server message', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ message: 'GPX ohne Zeitstempel wird nicht unterstützt' }, { status: 400 }),
+    );
+    const file = new File(['<gpx/>'], 'lauf.gpx');
+    await expect(api.uploadTrack(file)).rejects.toThrow('GPX ohne Zeitstempel wird nicht unterstützt');
+  });
+
+  it('getTrack reads the admin DTO', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(dto));
+    expect(await api.getTrack('t1')).toEqual(dto);
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/tracks/t1');
+  });
+
+  it('previewTracks posts the request with csrf', async () => {
+    const res = { suggestion: { offset: 120, reason: 'x' }, utcOffsetMinutes: 120, photos: [] };
+    fetchMock.mockResolvedValue(jsonResponse(res));
+    const req = { tracks: [{ trackId: 't1', label: 'Anna' }], imageIds: ['a'] };
+    expect(await api.previewTracks(req)).toEqual(res);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('/api/tracks/preview');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual(req);
+    expect(init.headers['x-csrf-token']).toBe('tok-123');
+  });
+
+  it('unusedCounts reads images and tracks', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ count: 3, trackCount: 1 }));
+    expect(await api.unusedCounts()).toEqual({ images: 3, tracks: 1 });
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/images/unused/count');
+  });
+});
+
 describe('error message extraction', () => {
   it('falls back to a generic message when the body has neither field', async () => {
     fetchMock.mockResolvedValue(jsonResponse({}, { status: 500 }));
