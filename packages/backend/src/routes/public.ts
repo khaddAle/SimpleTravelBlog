@@ -15,9 +15,12 @@ import {
   toTripDto,
   toSettingsDto,
   imageIdsInBlocks,
+  toTrackRefs,
+  toTrackStats,
   DEFAULT_SETTINGS,
   type ImageDims,
 } from '../dto.js';
+import { loadPlacement, photoIdsOfPost } from '../tracks/placement.js';
 import type { Block } from '@stb/shared';
 import { buildPublishedSearch } from '../posts/search.js';
 import { tripObjectIdForShortId, tripShortIdsByObjectId } from '../posts/trips.js';
@@ -131,6 +134,38 @@ export function registerPublicRoutes(app: FastifyInstance, ctx: RouteContext): v
       ),
     };
   });
+
+  // GPS tracks of a published post, loaded lazily by the reader so the post
+  // response stays small. Photo placement is computed here; filenames and
+  // capture times never leave the server.
+  app.get<{ Params: { shortId: string } }>(
+    '/api/public/posts/:shortId/tracks',
+    async (req) => {
+      const post = await Post.findOne(
+        { shortId: req.params.shortId, ...PUBLISHED },
+        { tracks: 1, utcOffsetMinutes: 1, blocks: 1, coverImageId: 1 },
+      ).lean();
+      if (!post?.tracks?.length) throw app.httpErrors.notFound('no tracks');
+
+      const placement = await loadPlacement({
+        refs: toTrackRefs(post.tracks),
+        utcOffsetMinutes: post.utcOffsetMinutes ?? undefined,
+        imageIds: photoIdsOfPost((post.blocks ?? []) as Block[], post.coverImageId),
+      });
+      if (!placement.tracks.length) throw app.httpErrors.notFound('no tracks');
+
+      return {
+        utcOffsetMinutes: placement.utcOffsetMinutes,
+        tracks: placement.tracks.map(({ ref, doc }) => ({
+          label: ref.label,
+          stats: toTrackStats(doc.stats),
+          moving: doc.moving,
+          points: doc.points,
+        })),
+        photos: placement.photos,
+      };
+    },
+  );
 
   app.get('/api/public/search', async (req) => {
     const parsed = searchQuerySchema.safeParse(req.query ?? {});

@@ -1,8 +1,11 @@
 import type { FastifyInstance } from 'fastify';
+import { trackPreviewRequestSchema } from '@stb/shared';
 import { Track } from '../db/models/Track.js';
 import { generateUniqueShortId } from '../lib/shortId.js';
 import { toTrackDto } from '../dto.js';
+import { postsReferencingTrack } from '../posts/references.js';
 import { GpxError } from '../tracks/gpx.js';
+import { loadPlacement } from '../tracks/placement.js';
 import { processGpx, type ProcessedTrack } from '../tracks/process.js';
 import type { RouteContext } from './context.js';
 
@@ -52,6 +55,23 @@ export function registerTrackRoutes(app: FastifyInstance, ctx: RouteContext): vo
     return toTrackDto(doc.toObject());
   });
 
+  /**
+   * Editor preview: where the post's photos land for the given tracks and
+   * offset, plus the suggested offset. Same code path as the public route.
+   */
+  app.post('/api/tracks/preview', mutate, async (req) => {
+    const parsed = trackPreviewRequestSchema.safeParse(req.body);
+    if (!parsed.success) throw app.httpErrors.badRequest('invalid preview request');
+    const { tracks, utcOffsetMinutes, imageIds } = parsed.data;
+    const placement = await loadPlacement({ refs: tracks, utcOffsetMinutes, imageIds });
+    if (!placement.suggestion) throw app.httpErrors.badRequest('unknown trackId');
+    return {
+      suggestion: placement.suggestion,
+      utcOffsetMinutes: placement.utcOffsetMinutes,
+      photos: placement.photos,
+    };
+  });
+
   app.get<{ Params: { shortId: string } }>('/api/tracks/:shortId', auth, async (req) => {
     const track = await Track.findOne({ shortId: req.params.shortId }, { points: 0 }).lean();
     if (!track) throw app.httpErrors.notFound('track not found');
@@ -64,6 +84,11 @@ export function registerTrackRoutes(app: FastifyInstance, ctx: RouteContext): vo
     async (req, reply) => {
       const track = await Track.findOne({ shortId: req.params.shortId }, { gpxKey: 1 }).lean();
       if (!track) throw app.httpErrors.notFound('track not found');
+      const refs = await postsReferencingTrack(req.params.shortId);
+      if (refs.length > 0) {
+        reply.code(409);
+        return { error: 'track_in_use', posts: refs };
+      }
       await storage.deleteObject(track.gpxKey);
       await Track.deleteOne({ _id: track._id });
       return reply.code(204).send();

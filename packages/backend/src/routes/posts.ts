@@ -1,10 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import { Types } from 'mongoose';
 import { ZodError, z } from 'zod';
-import { createPostRequestSchema, updatePostRequestSchema } from '@stb/shared';
+import {
+  createPostRequestSchema,
+  updatePostRequestSchema,
+  type PostTrackRef,
+} from '@stb/shared';
 import { Post } from '../db/models/Post.js';
+import { Track } from '../db/models/Track.js';
 import { generateUniqueShortId } from '../lib/shortId.js';
-import { toPostDto, toPostSummary } from '../dto.js';
+import { toPostDto, toPostSummary, toTrackRefs } from '../dto.js';
 import { tripObjectIdForShortId, tripShortIdsByObjectId } from '../posts/trips.js';
 import type { RouteContext } from './context.js';
 
@@ -54,6 +59,14 @@ export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): voi
     return (await Post.exists({ shortId: id })) != null;
   }
 
+  /** Reject references to tracks that do not exist (400, like an unknown trip). */
+  async function assertTracksExist(tracks: PostTrackRef[] | undefined): Promise<void> {
+    if (!tracks?.length) return;
+    const ids = tracks.map((t) => t.trackId);
+    const found = await Track.countDocuments({ shortId: { $in: ids } });
+    if (found !== ids.length) throw app.httpErrors.badRequest('unknown trackId');
+  }
+
   app.get('/api/posts', auth, async (req) => {
     const { limit, offset } = listPostsQuerySchema.parse(req.query ?? {});
     const [total, posts] = await Promise.all([
@@ -100,6 +113,7 @@ export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): voi
       if (!resolved) throw app.httpErrors.badRequest('unknown tripId');
       tripObjectId = resolved;
     }
+    await assertTracksExist(data.tracks);
 
     const shortId = await generateUniqueShortId((id) => postShortIdExists(id));
     const doc = await Post.create({
@@ -114,6 +128,8 @@ export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): voi
       lng: data.lng,
       ...(tripObjectId ? { tripId: new Types.ObjectId(tripObjectId) } : {}),
       ...(data.coverImageId ? { coverImageId: data.coverImageId } : {}),
+      ...(data.tracks ? { tracks: data.tracks } : {}),
+      ...(data.utcOffsetMinutes !== undefined ? { utcOffsetMinutes: data.utcOffsetMinutes } : {}),
       // Default to draft for interactive creates; the importer publishes on
       // import by passing status + the original publishedAt (preserved by the
       // model's pre-save hook, which only stamps publishedAt when unset).
@@ -136,6 +152,7 @@ export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): voi
 
       const post = await Post.findOne({ shortId: req.params.shortId });
       if (!post) throw app.httpErrors.notFound('post not found');
+      await assertTracksExist(data.tracks);
 
       let tripShortId: string | undefined;
       if (data.tripId !== undefined) {
@@ -161,6 +178,8 @@ export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): voi
       if (data.lat !== undefined) post.lat = data.lat;
       if (data.lng !== undefined) post.lng = data.lng;
       if (data.coverImageId !== undefined) post.coverImageId = data.coverImageId || null;
+      if (data.tracks !== undefined) post.set('tracks', data.tracks);
+      if (data.utcOffsetMinutes !== undefined) post.utcOffsetMinutes = data.utcOffsetMinutes;
       if (data.status !== undefined) post.status = data.status;
 
       await post.save();
@@ -186,6 +205,7 @@ export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): voi
       const resolved = await tripObjectIdForShortId(data.tripId);
       if (!resolved) throw app.httpErrors.badRequest('unknown tripId');
     }
+    await assertTracksExist(data.tracks);
 
     const savedAt = new Date();
     if (post.status === 'published') {
@@ -200,6 +220,8 @@ export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): voi
         lng: data.lng,
         ...(data.tripId ? { tripId: data.tripId } : {}),
         ...(data.coverImageId ? { coverImageId: data.coverImageId } : {}),
+        tracks: data.tracks ?? [],
+        ...(data.utcOffsetMinutes !== undefined ? { utcOffsetMinutes: data.utcOffsetMinutes } : {}),
         savedAt,
       });
       await post.save({ timestamps: false });
@@ -218,6 +240,8 @@ export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): voi
     post.lng = data.lng;
     post.tripId = tripObjectId ? new Types.ObjectId(tripObjectId) : null;
     post.coverImageId = data.coverImageId || null;
+    post.set('tracks', data.tracks ?? []);
+    post.utcOffsetMinutes = data.utcOffsetMinutes ?? null;
     await post.save();
     return { savedAt: post.updatedAt.toISOString(), hasPendingDraft: false };
   });
@@ -239,6 +263,8 @@ export function registerPostRoutes(app: FastifyInstance, ctx: RouteContext): voi
       post.lat = d.lat;
       post.lng = d.lng;
       post.coverImageId = d.coverImageId ?? null;
+      post.set('tracks', toTrackRefs(d.tracks ?? []));
+      post.utcOffsetMinutes = d.utcOffsetMinutes ?? null;
       if (d.tripId) {
         const resolved = await tripObjectIdForShortId(d.tripId);
         if (!resolved) throw app.httpErrors.badRequest('unknown tripId');

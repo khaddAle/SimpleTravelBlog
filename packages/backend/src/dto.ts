@@ -11,6 +11,7 @@ import type {
   UserListItem,
   TrackDto,
   TrackStats,
+  PostTrackRef,
 } from '@stb/shared';
 
 /**
@@ -33,7 +34,35 @@ export interface PostDraftLike {
   // so no ObjectId→shortId resolution is needed on output.
   tripId?: string | null;
   coverImageId?: string | null;
+  tracks?: readonly TrackRefLike[] | null;
+  utcOffsetMinutes?: number | null;
   savedAt: Date;
+}
+
+/** A stored track reference (Mongo may hold `prefix: null`). */
+export interface TrackRefLike {
+  trackId: string;
+  label: string;
+  prefix?: string | null;
+}
+
+export function toTrackRefs(ts: readonly TrackRefLike[]): PostTrackRef[] {
+  return ts.map((t) => ({
+    trackId: t.trackId,
+    label: t.label,
+    ...(t.prefix ? { prefix: t.prefix } : {}),
+  }));
+}
+
+/** Track fields of a post or draft; both omitted when unset. */
+function trackFields(p: {
+  tracks?: readonly TrackRefLike[] | null;
+  utcOffsetMinutes?: number | null;
+}): { tracks?: PostTrackRef[]; utcOffsetMinutes?: number } {
+  return {
+    ...(p.tracks?.length ? { tracks: toTrackRefs(p.tracks) } : {}),
+    ...(p.utcOffsetMinutes != null ? { utcOffsetMinutes: p.utcOffsetMinutes } : {}),
+  };
 }
 
 export interface PostLike {
@@ -47,6 +76,8 @@ export interface PostLike {
   lat: number;
   lng: number;
   coverImageId?: string | null;
+  tracks?: readonly TrackRefLike[] | null;
+  utcOffsetMinutes?: number | null;
   status: 'draft' | 'published';
   publishedAt?: Date | null;
   draft?: PostDraftLike | null;
@@ -67,6 +98,7 @@ export function toPostDraft(d: PostDraftLike): PostDraft {
     lng: d.lng,
     ...(d.tripId ? { tripId: d.tripId } : {}),
     ...(d.coverImageId ? { coverImageId: d.coverImageId } : {}),
+    ...trackFields(d),
     savedAt: d.savedAt.toISOString(),
   };
 }
@@ -105,6 +137,7 @@ export function toPostDto(
     lng: p.lng,
     ...(tripShortId ? { tripId: tripShortId } : {}),
     ...(p.coverImageId ? { coverImageId: p.coverImageId } : {}),
+    ...trackFields(p),
     ...(images ? { images } : {}),
     status: p.status,
     ...(p.publishedAt ? { publishedAt: p.publishedAt.toISOString() } : {}),
@@ -190,14 +223,19 @@ export interface TrackLike {
   stats: TrackStats;
 }
 
+/** Exactly the stats fields (a Mongo subdoc may carry more). */
+export function toTrackStats(s: TrackStats): TrackStats {
+  const { distance, ascent, descent, movingMs, start, end, minEle, maxEle } = s;
+  return { distance, ascent, descent, movingMs, start, end, minEle, maxEle };
+}
+
 /** Admin DTO of a track; points and the storage key stay server-side. */
 export function toTrackDto(t: TrackLike): TrackDto {
-  const { distance, ascent, descent, movingMs, start, end, minEle, maxEle } = t.stats;
   return {
     id: t.shortId,
     originalFilename: t.originalFilename,
     name: t.name,
-    stats: { distance, ascent, descent, movingMs, start, end, minEle, maxEle },
+    stats: toTrackStats(t.stats),
   };
 }
 

@@ -53,6 +53,26 @@ export interface PostRef {
   title: string;
 }
 
+/** Every Track shortId referenced by a post or a pending draft — used to find orphans. */
+export async function trackIdsInUse(): Promise<Set<string>> {
+  const posts = await Post.find({}, { 'tracks.trackId': 1, 'draft.tracks.trackId': 1 }).lean();
+  const used = new Set<string>();
+  for (const post of posts) {
+    for (const t of post.tracks ?? []) used.add(t.trackId);
+    for (const t of post.draft?.tracks ?? []) used.add(t.trackId);
+  }
+  return used;
+}
+
+/** Posts whose live content or pending draft uses a track, for the delete-guard. */
+export async function postsReferencingTrack(trackId: string): Promise<PostRef[]> {
+  const posts = await Post.find(
+    { $or: [{ 'tracks.trackId': trackId }, { 'draft.tracks.trackId': trackId }] },
+    { shortId: 1, title: 1 },
+  ).lean();
+  return posts.map((p) => ({ id: p.shortId, title: p.title }));
+}
+
 /** Published+draft posts that reference an image, for the delete-guard / usage view. */
 export async function postsReferencingImage(imageId: string): Promise<PostRef[]> {
   const posts = await Post.find(

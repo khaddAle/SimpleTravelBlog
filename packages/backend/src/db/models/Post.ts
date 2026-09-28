@@ -3,6 +3,17 @@ import { blockArraySchema, type Block } from '@stb/shared';
 import { blocksToSearchText } from '../../blocks/plaintext.js';
 import { foldSearch } from '../../posts/fold.js';
 
+// A GPX track attached to a post (Track shortId + display label + optional
+// photo filename prefix). Order matters: index 0/1 pick the track colours.
+const trackRefSchema = new Schema(
+  {
+    trackId: { type: String, required: true },
+    label: { type: String, required: true },
+    prefix: { type: String },
+  },
+  { _id: false },
+);
+
 // Draft snapshot of the editable payload. A published post carries one of these
 // while it has unpublished autosaved edits; "Veröffentlichen" promotes it to the
 // top-level fields and clears it. Typed (not Mixed) so it serializes predictably;
@@ -21,6 +32,8 @@ const draftSchema = new Schema(
     lng: { type: Number, required: true },
     tripId: { type: String },
     coverImageId: { type: String },
+    tracks: { type: [trackRefSchema], default: [] },
+    utcOffsetMinutes: { type: Number },
     savedAt: { type: Date, required: true },
   },
   { _id: false },
@@ -41,7 +54,11 @@ const postSchema = new Schema(
     // Optional per-post cover image (image shortId). Counts toward the image
     // refcount / delete-guard; falls back to the first block thumbnail when unset.
     coverImageId: { type: String },
-    status: { type: String, enum: ['draft', 'published'], required: true, default: 'draft' },
+    // 0–2 GPX tracks shown under the article header; they pin their Track docs
+    // like images do. The UTC offset maps naive photo times and the replay clock.
+    tracks: { type: [trackRefSchema], default: [] },
+    utcOffsetMinutes: { type: Number },
+    status:{ type: String, enum: ['draft', 'published'], required: true, default: 'draft' },
     authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     publishedAt: { type: Date },
     // Absent unless a published post has unpublished autosaved edits.

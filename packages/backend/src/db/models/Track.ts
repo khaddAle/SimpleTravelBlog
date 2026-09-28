@@ -1,6 +1,7 @@
-import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose';
+import mongoose, { Schema, type Model, type Types } from 'mongoose';
+import type { TimeInterval, TrackRow, TrackStats } from '@stb/shared';
 
-const statsSchema = new Schema(
+const statsSchema = new Schema<TrackStats>(
   {
     distance: { type: Number, required: true },
     ascent: { type: Number, required: true },
@@ -21,7 +22,21 @@ const statsSchema = new Schema(
  * stats and moving intervals of the full track. The raw GPX stays in the
  * bucket under `gpxKey` so tracks can be reprocessed if the constants change.
  */
-const trackSchema = new Schema(
+export interface TrackDoc {
+  shortId: string;
+  originalFilename: string;
+  name: string;
+  stats: TrackStats;
+  moving: TimeInterval[];
+  points: TrackRow[];
+  gpxKey: string;
+  uploaderId: Types.ObjectId;
+  createdAt: Date;
+}
+
+// Explicit document type: mongoose infers nested `[[Number]]` arrays as
+// subdocument arrays, which the row/interval tuples are not.
+const trackSchema = new Schema<TrackDoc>(
   {
     shortId: { type: String, required: true, unique: true },
     originalFilename: { type: String, required: true },
@@ -34,8 +49,6 @@ const trackSchema = new Schema(
   },
   { timestamps: { createdAt: true, updatedAt: false } },
 );
-
-export type TrackDoc = InferSchemaType<typeof trackSchema>;
 
 export const Track: Model<TrackDoc> =
   (mongoose.models.Track as Model<TrackDoc>) ?? mongoose.model<TrackDoc>('Track', trackSchema);

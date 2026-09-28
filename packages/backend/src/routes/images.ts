@@ -2,11 +2,13 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { imageListQuerySchema } from '@stb/shared';
 import { Image } from '../db/models/Image.js';
+import { Track } from '../db/models/Track.js';
 import { generateUniqueShortId } from '../lib/shortId.js';
 import { processImage } from '../images/pipeline.js';
 import { toImageDto } from '../dto.js';
 import {
   imageIdsInUse,
+  trackIdsInUse,
   postsReferencingImage,
   imageReferencedBySettings,
 } from '../posts/references.js';
@@ -215,11 +217,17 @@ export function registerImageRoutes(app: FastifyInstance, ctx: RouteContext): vo
     return { images: images.map(toImageDto), page, pageSize, total };
   });
 
-  /** How many images are currently unused — drives the bulk-delete confirm. */
+  /**
+   * How many images (and GPX tracks) are currently unused — drives the
+   * bulk-delete confirm. Unused tracks ride along with the image cleanup.
+   */
   app.get('/api/images/unused/count', auth, async () => {
-    const used = await imageIdsInUse();
-    const count = await Image.countDocuments({ shortId: { $nin: [...used] } });
-    return { count };
+    const [used, usedTracks] = await Promise.all([imageIdsInUse(), trackIdsInUse()]);
+    const [count, trackCount] = await Promise.all([
+      Image.countDocuments({ shortId: { $nin: [...used] } }),
+      Track.countDocuments({ shortId: { $nin: [...usedTracks] } }),
+    ]);
+    return { count, trackCount };
   });
 
   /**
@@ -239,7 +247,18 @@ export function registerImageRoutes(app: FastifyInstance, ctx: RouteContext): vo
       await Image.deleteOne({ _id: image._id });
       deleted += 1;
     }
-    return { deleted };
+    const usedTracks = await trackIdsInUse();
+    const unusedTracks = await Track.find(
+      { shortId: { $nin: [...usedTracks] } },
+      { gpxKey: 1 },
+    ).lean();
+    let deletedTracks = 0;
+    for (const track of unusedTracks) {
+      await storage.deleteObject(track.gpxKey);
+      await Track.deleteOne({ _id: track._id });
+      deletedTracks += 1;
+    }
+    return { deleted, deletedTracks };
   });
 
   app.get<{ Params: { shortId: string } }>(
