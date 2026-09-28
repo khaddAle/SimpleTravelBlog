@@ -101,7 +101,7 @@
       </div>
       {#if post.tracks?.length}
         {#key post.id}
-          <TrackMap postId={post.id} />
+          <TrackMap postId={post.id} title={post.title} images={post.images} />
         {/key}
       {/if}
     </div>

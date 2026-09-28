@@ -40,12 +40,17 @@ export function fmtDuration(ms: number): string {
   return `${Math.floor(min / 60)}:${pad(min % 60)} h`;
 }
 
+const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+
 /** UTC ms → local "HH:MM[:SS]" at the post's offset. */
-export function fmtLocal(_utc: number, _offsetMin: number, _withSec = false): string {
-  throw new Error('not implemented');
+export function fmtLocal(utc: number, offsetMin: number, withSec = false): string {
+  const d = new Date(utc + offsetMin * 60_000);
+  const hm = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+  return withSec ? `${hm}:${pad(d.getUTCSeconds())}` : hm;
 }
 
 /** UTC ms → local "Sa, 12.09." at the post's offset. */
-export function fmtLocalDay(_utc: number, _offsetMin: number): string {
-  throw new Error('not implemented');
+export function fmtLocalDay(utc: number, offsetMin: number): string {
+  const d = new Date(utc + offsetMin * 60_000);
+  return `${WEEKDAYS[d.getUTCDay()]!}, ${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}.`;
 }
