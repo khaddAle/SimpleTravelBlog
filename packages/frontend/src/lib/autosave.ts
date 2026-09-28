@@ -95,7 +95,8 @@ export function createAutosaver(opts: AutosaverOptions): Autosaver {
   function cancel(): Promise<void> {
     clearTimers();
     pendingAgain = false;
-    return Promise.resolve();
+    if (!inFlight) return Promise.resolve();
+    return new Promise<void>((resolve) => waiters.push(resolve));
   }
 
   return { schedule, flush, cancel };

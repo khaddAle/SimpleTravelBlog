@@ -263,7 +263,7 @@
       return;
     }
     busy = true;
-    autosaver.cancel();
+    await autosaver.cancel();
     try {
       if (!postId) {
         const created = await api.createPost(buildBody());
@@ -289,7 +289,7 @@
     if (!globalThis.confirm('Nicht veröffentlichte Änderungen verwerfen?')) return;
     error = '';
     busy = true;
-    autosaver.cancel();
+    await autosaver.cancel();
     try {
       const post = await api.discardDraft(postId);
       seedFrom(post);
