@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { fmtDuration, fmtKm, fmtM, fmtOffset, OFFSET_CHOICES } from './format.js';
+import { fmtDuration, fmtKm, fmtM, fmtOffset, niceStep, OFFSET_CHOICES } from './format.js';
+
+describe('niceStep', () => {
+  it('picks a 1/2/2.5/5 step giving about the target number of ticks', () => {
+    expect(niceStep(2.5, 4)).toBe(1);
+    expect(niceStep(298, 3)).toBe(100);
+    expect(niceStep(19.5, 8)).toBe(2.5);
+    expect(niceStep(40, 8)).toBe(5);
+  });
+});
 
 describe('German track formatters', () => {
   it('formats kilometres with one decimal and a comma', () => {

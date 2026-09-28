@@ -216,6 +216,15 @@ describe('tracks', () => {
     expect(init.headers['x-csrf-token']).toBe('tok-123');
   });
 
+  it('publicPostTracks reads the lazily loaded track data without csrf', async () => {
+    const data = { utcOffsetMinutes: 120, tracks: [], photos: [] };
+    fetchMock.mockResolvedValue(jsonResponse(data));
+    expect(await api.publicPostTracks('p1')).toEqual(data);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('/api/public/posts/p1/tracks');
+    expect(init.headers['x-csrf-token']).toBeUndefined();
+  });
+
   it('unusedCounts reads images and tracks', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ count: 3, trackCount: 1 }));
     expect(await api.unusedCounts()).toEqual({ images: 3, tracks: 1 });

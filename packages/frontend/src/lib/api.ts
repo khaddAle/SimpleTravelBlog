@@ -16,6 +16,7 @@ import type {
   TrackDto,
   TrackPreviewRequest,
   TrackPreviewResponse,
+  PublicTrackData,
 } from '@stb/shared';
 
 /** Header the backend's double-submit CSRF guard reads on mutations. */
@@ -408,6 +409,9 @@ export const api = {
       `/api/public/search${toQueryString({ ...query })}`,
     );
     return res.posts;
+  },
+  async publicPostTracks(_id: string): Promise<PublicTrackData> {
+    throw new Error('not implemented');
   },
   async publicTrips(): Promise<TripDto[]> {
     return (await request<{ trips: TripDto[] }>('/api/public/trips')).trips;

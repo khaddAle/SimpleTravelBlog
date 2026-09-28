@@ -27,6 +27,10 @@ export function fmtOffset(min: number): string {
   return `UTC${sign}${Math.floor(a / 60)}${a % 60 ? `:${pad(a % 60)}` : ''}`;
 }
 
+export function niceStep(_range: number, _target: number): number {
+  throw new Error('not implemented');
+}
+
 /** 9 648 000 ms → "2:41 h". */
 export function fmtDuration(ms: number): string {
   const min = Math.round(ms / 60_000);

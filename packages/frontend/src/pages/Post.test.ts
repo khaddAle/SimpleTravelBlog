@@ -3,6 +3,27 @@ import { render, screen } from '@testing-library/svelte';
 import type { PostDto, PublicPostHead, TripDto } from '@stb/shared';
 import { api, ApiError } from '../lib/api.js';
 import Post from './Post.svelte';
+import { oneTrack } from '../../tests/trackData.js';
+
+// The GPS-track block mounts Leaflet; stub it.
+vi.mock('leaflet', () => {
+  const layer = () => ({ addTo: vi.fn().mockReturnThis(), on: vi.fn().mockReturnThis() });
+  const map = {
+    fitBounds: vi.fn().mockReturnThis(),
+    removeLayer: vi.fn().mockReturnThis(),
+    remove: vi.fn(),
+    attributionControl: { setPrefix: vi.fn() },
+  };
+  return {
+    default: {
+      map: vi.fn(() => map),
+      tileLayer: vi.fn(layer),
+      layerGroup: vi.fn(layer),
+      polyline: vi.fn(layer),
+      circleMarker: vi.fn(layer),
+    },
+  };
+});
 
 const full: PostDto = {
   id: 'p1',
@@ -51,6 +72,36 @@ function stubTrips(trips: TripDto[] = []): void {
 }
 
 afterEach(() => vi.restoreAllMocks());
+
+describe('Post GPS track', () => {
+  it('shows the track block under the header when the post has tracks', async () => {
+    vi.spyOn(api, 'publicPost').mockResolvedValue({
+      ...full,
+      tracks: [{ trackId: 't1', label: 'Anna' }],
+    });
+    vi.spyOn(api, 'publicPostHeads').mockResolvedValue(heads(full));
+    stubTrips();
+    const load = vi.spyOn(api, 'publicPostTracks').mockResolvedValue(oneTrack());
+    render(Post, { params: { id: 'p1' } });
+    const region = await screen.findByRole('region', { name: 'GPS-Track' });
+    expect(load).toHaveBeenCalledWith('p1');
+    // Between the article head and the first block.
+    const title = screen.getByRole('heading', { level: 1 });
+    const firstBlock = screen.getByText('Wir sind im Dunkeln aufgebrochen.');
+    expect(title.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(region.compareDocumentPosition(firstBlock) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('does not load tracks for a post without them', async () => {
+    vi.spyOn(api, 'publicPost').mockResolvedValue(full);
+    vi.spyOn(api, 'publicPostHeads').mockResolvedValue(heads(full));
+    stubTrips();
+    const load = vi.spyOn(api, 'publicPostTracks');
+    render(Post, { params: { id: 'p1' } });
+    await screen.findByRole('heading', { level: 1 });
+    expect(load).not.toHaveBeenCalled();
+  });
+});
 
 describe('Post', () => {
   it('renders the article head with eyebrow, title, subtitle and date', async () => {
