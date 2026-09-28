@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { blockArraySchema } from './blocks.js';
+import type { TrackStats } from './track/build.js';
+import type { TrackRow } from './track/simplify.js';
 
 /**
  * Request/response DTO schemas shared by backend (validation) and frontend
@@ -59,6 +61,94 @@ export const changePasswordRequestSchema = z
   });
 export type ChangePasswordRequest = z.infer<typeof changePasswordRequestSchema>;
 
+// --- tracks ---
+/** A post's UTC offset for photo times and the replay clock: −12 h…+14 h in 30 min steps. */
+export const utcOffsetMinutesSchema = z.number().int().min(-720).max(840).multipleOf(30);
+
+/** A GPX track attached to a post: display label, plus a photo filename prefix (with two tracks). */
+export const postTrackRefSchema = z.object({
+  trackId: z.string().min(1).max(64),
+  label: z.string().trim().min(1).max(40),
+  prefix: z.string().max(40).optional(),
+});
+export type PostTrackRef = z.infer<typeof postTrackRefSchema>;
+
+/** 0–2 tracks per post, each at most once. */
+export const postTracksSchema = z
+  .array(postTrackRefSchema)
+  .max(2)
+  .refine((ts) => new Set(ts.map((t) => t.trackId)).size === ts.length, {
+    message: 'track used twice',
+  });
+
+/** Stats of the full track, computed at upload. `start`/`end` are epoch ms (UTC). */
+export const trackStatsSchema = z.object({
+  distance: z.number().nonnegative(),
+  ascent: z.number().nonnegative(),
+  descent: z.number().nonnegative(),
+  movingMs: z.number().nonnegative(),
+  start: z.number(),
+  end: z.number(),
+  minEle: z.number(),
+  maxEle: z.number(),
+}) satisfies z.ZodType<TrackStats>;
+
+/** Admin view of an uploaded track. */
+export const trackDtoSchema = z.object({
+  id: z.string(),
+  originalFilename: z.string(),
+  name: z.string(),
+  stats: trackStatsSchema,
+});
+export type TrackDto = z.infer<typeof trackDtoSchema>;
+
+const trackRowSchema = z.tuple([z.number(), z.number(), z.number(), z.number(), z.number()]);
+
+/**
+ * A photo's computed spot on a track. Deliberately without filename and
+ * capture time: those stay private.
+ */
+export const trackPhotoSchema = z.object({
+  imageId: z.string(),
+  track: z.number().int().min(0).max(1),
+  t: z.number(),
+  where: z.enum(['on', 'before', 'after', 'notime']),
+});
+export type TrackPhoto = z.infer<typeof trackPhotoSchema>;
+
+/** Reader payload of `GET /api/public/posts/:id/tracks`, loaded lazily. */
+export const publicTrackDataSchema = z.object({
+  utcOffsetMinutes: utcOffsetMinutesSchema,
+  tracks: z
+    .array(
+      z.object({
+        label: z.string(),
+        stats: trackStatsSchema,
+        moving: z.array(z.tuple([z.number(), z.number()])),
+        points: z.array(trackRowSchema) satisfies z.ZodType<TrackRow[]>,
+      }),
+    )
+    .max(2),
+  photos: z.array(trackPhotoSchema),
+});
+export type PublicTrackData = z.infer<typeof publicTrackDataSchema>;
+
+/** Editor preview: where the post's photos land for the given tracks and offset. */
+export const trackPreviewRequestSchema = z.object({
+  tracks: z.array(postTrackRefSchema).min(1).max(2),
+  utcOffsetMinutes: utcOffsetMinutesSchema.optional(),
+  imageIds: z.array(z.string()).max(1000),
+});
+export type TrackPreviewRequest = z.infer<typeof trackPreviewRequestSchema>;
+
+export const trackPreviewResponseSchema = z.object({
+  suggestion: z.object({ offset: utcOffsetMinutesSchema, reason: z.string() }),
+  /** The offset the placement used: the requested one, else the suggestion. */
+  utcOffsetMinutes: utcOffsetMinutesSchema,
+  photos: z.array(trackPhotoSchema),
+});
+export type TrackPreviewResponse = z.infer<typeof trackPreviewResponseSchema>;
+
 // --- posts ---
 export const postMetadataSchema = z.object({
   title: z.string().min(1).max(200),
@@ -69,6 +159,8 @@ export const postMetadataSchema = z.object({
   lat: latSchema,
   lng: lngSchema,
   tripId: z.string().optional(),
+  tracks: postTracksSchema.optional(),
+  utcOffsetMinutes: utcOffsetMinutesSchema.optional(),
 });
 
 export const createPostRequestSchema = postMetadataSchema.extend({
@@ -115,6 +207,8 @@ export const postDtoSchema = z.object({
   lng: lngSchema,
   tripId: z.string().optional(),
   coverImageId: z.string().optional(),
+  tracks: postTracksSchema.optional(),
+  utcOffsetMinutes: utcOffsetMinutesSchema.optional(),
   // Sidecar map of natural pixel dimensions keyed by imageId, for the image
   // shortIds this post references. Populated only by the public single-post
   // route so the reader can render natural ratios SSR/first-paint without layout
@@ -231,15 +325,6 @@ export const imageListQuerySchema = paginationQuerySchema.extend({
   excludePostId: z.string().max(64).optional(),
 });
 export type ImageListQuery = z.infer<typeof imageListQuerySchema>;
-
-// --- tracks ---
-export const utcOffsetMinutesSchema = z.never();
-export const postTrackRefSchema = z.never();
-export const trackStatsSchema = z.never();
-export const trackDtoSchema = z.never();
-export const publicTrackDataSchema = z.never();
-export const trackPreviewRequestSchema = z.never();
-export const trackPreviewResponseSchema = z.never();
 
 // --- users ---
 export const createUserRequestSchema = z.object({
