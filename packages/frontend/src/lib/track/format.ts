@@ -16,7 +16,8 @@ export function fmtKm(m: number): string {
 
 /** 1025.4 → "1.025 m". */
 export function fmtM(m: number): string {
-  return `${Math.round(m).toLocaleString('de-DE')} m`;
+  // `|| 0` turns -0 into 0.
+  return `${(Math.round(m) || 0).toLocaleString('de-DE')} m`;
 }
 
 /** 120 → "UTC+2", −570 → "UTC−9:30", 0 → "UTC±0". */
