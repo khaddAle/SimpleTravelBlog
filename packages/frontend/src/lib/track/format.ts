@@ -39,3 +39,13 @@ export function fmtDuration(ms: number): string {
   const min = Math.round(ms / 60_000);
   return `${Math.floor(min / 60)}:${pad(min % 60)} h`;
 }
+
+/** UTC ms → local "HH:MM[:SS]" at the post's offset. */
+export function fmtLocal(_utc: number, _offsetMin: number, _withSec = false): string {
+  throw new Error('not implemented');
+}
+
+/** UTC ms → local "Sa, 12.09." at the post's offset. */
+export function fmtLocalDay(_utc: number, _offsetMin: number): string {
+  throw new Error('not implemented');
+}

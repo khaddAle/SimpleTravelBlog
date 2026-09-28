@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
 import L from 'leaflet';
 import { api, ApiError } from '../../lib/api.js';
 import TrackMap from './TrackMap.svelte';
@@ -13,14 +14,29 @@ vi.mock('leaflet', () => {
     remove: vi.fn(),
     attributionControl: { setPrefix: vi.fn() },
   };
-  const layer = () => ({ addTo: vi.fn().mockReturnThis(), on: vi.fn().mockReturnThis() });
+  const layer = () => ({
+    addTo: vi.fn().mockReturnThis(),
+    on: vi.fn().mockReturnThis(),
+    clearLayers: vi.fn().mockReturnThis(),
+    setLatLng: vi.fn().mockReturnThis(),
+    getElement: vi.fn(() => undefined),
+    remove: vi.fn(),
+  });
   return {
     default: {
-      map: vi.fn(() => map),
+      map: vi.fn(() => ({
+        ...map,
+        on: vi.fn().mockReturnThis(),
+        panTo: vi.fn().mockReturnThis(),
+        getBounds: vi.fn(() => ({ pad: () => ({ contains: () => true }) })),
+        latLngToContainerPoint: vi.fn(() => ({ x: 0, y: 0 })),
+      })),
       tileLayer: vi.fn(layer),
       layerGroup: vi.fn(layer),
       polyline: vi.fn(layer),
       circleMarker: vi.fn(layer),
+      marker: vi.fn(layer),
+      divIcon: vi.fn((o: object) => o),
     },
   };
 });
@@ -83,6 +99,29 @@ describe('TrackMap', () => {
     await Promise.resolve();
     expect(screen.queryByRole('region', { name: 'GPS-Track' })).toBeNull();
     expect(L.map).not.toHaveBeenCalled();
+  });
+
+  it('opens the enlarged view from the button and from the map', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'publicPostTracks').mockResolvedValue(twoTracks());
+    render(TrackMap, { postId: 'p1', title: 'Über den Pass' });
+    const btn = await screen.findByRole('button', { name: 'Vergrößern' });
+    await user.click(btn);
+    expect(screen.getByRole('dialog', { name: 'GPS-Track' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Schließen' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(btn).toHaveFocus();
+    await user.click(screen.getByRole('button', { name: 'Karte vergrößern' }));
+    expect(screen.getByRole('dialog', { name: 'GPS-Track' })).toBeInTheDocument();
+  });
+
+  it('opens the enlarged view from the map with the keyboard', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, 'publicPostTracks').mockResolvedValue(oneTrack());
+    render(TrackMap, { postId: 'p1' });
+    (await screen.findByRole('button', { name: 'Karte vergrößern' })).focus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('dialog', { name: 'GPS-Track' })).toBeInTheDocument();
   });
 
   it('removes the map on unmount', async () => {

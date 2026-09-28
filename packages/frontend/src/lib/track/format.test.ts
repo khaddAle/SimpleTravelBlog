@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { fmtDuration, fmtKm, fmtM, fmtOffset, niceStep, OFFSET_CHOICES } from './format.js';
+import {
+  fmtDuration,
+  fmtKm,
+  fmtLocal,
+  fmtLocalDay,
+  fmtM,
+  fmtOffset,
+  niceStep,
+  OFFSET_CHOICES,
+} from './format.js';
+import { T0 } from '../../../tests/trackData.js';
 
 describe('niceStep', () => {
   it('picks a 1/2/2.5/5 step giving about the target number of ticks', () => {
@@ -39,5 +49,18 @@ describe('German track formatters', () => {
     expect(OFFSET_CHOICES[OFFSET_CHOICES.length - 1]).toBe(840);
     expect(OFFSET_CHOICES).toHaveLength(53);
     expect(OFFSET_CHOICES).toContain(330);
+  });
+});
+
+describe('local clock formatters', () => {
+  it('shows the local time of a UTC instant at the post offset', () => {
+    expect(fmtLocal(T0 + 65_000, 120)).toBe('10:01');
+    expect(fmtLocal(T0 + 65_000, 120, true)).toBe('10:01:05');
+    expect(fmtLocal(T0, -570)).toBe('22:30');
+  });
+
+  it('shows the local weekday and date', () => {
+    expect(fmtLocalDay(T0, 120)).toBe('Sa, 12.09.');
+    expect(fmtLocalDay(T0, -570)).toBe('Fr, 11.09.');
   });
 });
