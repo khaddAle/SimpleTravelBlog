@@ -302,25 +302,40 @@ export const api = {
   async deleteImage(id: string): Promise<void> {
     await request<void>(`/api/images/${id}`, { method: 'DELETE', csrf: true });
   },
-  /** How many images are currently unused (for the bulk-delete confirm). */
-  async unusedImageCount(): Promise<number> {
-    return (await request<{ count: number }>('/api/images/unused/count')).count;
-  },
+  /** How many images and GPS tracks are currently unused (for the bulk-delete confirm). */
   async unusedCounts(): Promise<{ images: number; tracks: number }> {
-    throw new Error('not implemented');
+    const res = await request<{ count: number; trackCount: number }>('/api/images/unused/count');
+    return { images: res.count, tracks: res.trackCount };
   },
 
   // --- tracks ---
-  async uploadTrack(_file: File): Promise<TrackDto> {
-    throw new Error('not implemented');
+  /** Upload a GPX file; parsed synchronously, so the DTO comes straight back. */
+  async uploadTrack(file: File): Promise<TrackDto> {
+    const form = new FormData();
+    form.append('file', file);
+    const headers: Record<string, string> = {};
+    const token = readCsrfToken();
+    if (token) headers[CSRF_HEADER] = token;
+    const res = await fetch('/api/tracks/upload', {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+      body: form,
+    });
+    return handle<TrackDto>(res);
   },
-  async getTrack(_id: string): Promise<TrackDto> {
-    throw new Error('not implemented');
+  async getTrack(id: string): Promise<TrackDto> {
+    return await request<TrackDto>(`/api/tracks/${id}`);
   },
-  async previewTracks(_req: TrackPreviewRequest): Promise<TrackPreviewResponse> {
-    throw new Error('not implemented');
+  /** Where the post's photos land for these tracks + offset, and the suggested offset. */
+  async previewTracks(req: TrackPreviewRequest): Promise<TrackPreviewResponse> {
+    return await request<TrackPreviewResponse>('/api/tracks/preview', {
+      method: 'POST',
+      body: req,
+      csrf: true,
+    });
   },
-  /** Delete every unused image; returns how many were removed. */
+  /** Delete every unused image (and unused GPS track); returns how many images were removed. */
   async deleteUnusedImages(): Promise<number> {
     return (
       await request<{ deleted: number }>('/api/images/unused/delete', {

@@ -32,7 +32,16 @@
   const whereOpen = new SvelteSet<string>();
   let blocked = $state<{ filename: string; posts: PostRef[] } | null>(null);
 
-  let unusedPrompt = $state<{ count: number } | null>(null);
+  let unusedPrompt = $state<{ images: number; tracks: number } | null>(null);
+
+  /** "7 unbenutzte Bilder und 1 unbenutzter GPS-Track wird …" for the confirm. */
+  function unusedSentence({ images, tracks }: { images: number; tracks: number }): string {
+    const parts: string[] = [];
+    if (images) parts.push(images === 1 ? '1 unbenutztes Bild' : `${images} unbenutzte Bilder`);
+    if (tracks) parts.push(tracks === 1 ? '1 unbenutzter GPS-Track' : `${tracks} unbenutzte GPS-Tracks`);
+    const verb = images + tracks === 1 ? 'wird' : 'werden';
+    return `${parts.join(' und ')} ${verb} unwiderruflich gelöscht.`;
+  }
   let bulkBusy = $state(false);
 
   let selMode = $state(false);
@@ -163,7 +172,7 @@
 
   // ---- bulk delete of all unused ----
   async function promptDeleteUnused(): Promise<void> {
-    unusedPrompt = { count: await api.unusedImageCount() };
+    unusedPrompt = await api.unusedCounts();
   }
   async function confirmDeleteUnused(): Promise<void> {
     bulkBusy = true;
@@ -286,16 +295,13 @@
 
   {#if unusedPrompt}
     <div class="confirm" role="dialog" aria-modal="true" aria-label="Unbenutzte Bilder löschen">
-      {#if unusedPrompt.count === 0}
+      {#if unusedPrompt.images + unusedPrompt.tracks === 0}
         <p>Es gibt keine unbenutzten Bilder.</p>
         <div class="confirm-actions">
           <button type="button" onclick={() => (unusedPrompt = null)}>Schließen</button>
         </div>
       {:else}
-        <p>
-          <strong>{unusedPrompt.count}</strong> unbenutzte
-          {unusedPrompt.count === 1 ? 'Bild wird' : 'Bilder werden'} unwiderruflich gelöscht. Fortfahren?
-        </p>
+        <p>{unusedSentence(unusedPrompt)} Fortfahren?</p>
         <div class="confirm-actions">
           <button type="button" disabled={bulkBusy} onclick={() => (unusedPrompt = null)}>Abbrechen</button>
           <button type="button" class="danger" disabled={bulkBusy} onclick={confirmDeleteUnused}>Löschen</button>

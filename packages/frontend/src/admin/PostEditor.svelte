@@ -11,6 +11,7 @@
   import MetadataSidebar from './editor/MetadataSidebar.svelte';
   import BlockEditor from './editor/BlockEditor.svelte';
   import ImagePicker from './editor/ImagePicker.svelte';
+  import TrackPanel, { type TrackState } from './editor/TrackPanel.svelte';
 
   let { params }: { params?: { id?: string } } = $props();
   const editId = $derived(params?.id);
@@ -24,6 +25,9 @@
     lng: 10.4515,
   });
   let blocks = $state<Block[]>([]);
+  // GPS tracks + photo UTC offset. Kept apart from `metadata` because the
+  // metadata sidebar emits its whole local copy and would overwrite them.
+  let trackState = $state<TrackState>({ tracks: [] });
   // The post's id once it exists. New posts have none until autosave (or publish)
   // creates them; kept separate from the route's `editId` so the create→edit URL
   // swap (`replace`) can't retrigger the one-shot load in onMount.
@@ -50,7 +54,8 @@
   // autosave. `null` baseline until the post has loaded, so we never report
   // dirty mid-load. "Dirty" here means *not yet autosaved* (not "not published").
   let lastSavedSnapshot = $state<string | null>(null);
-  const workingSnapshot = $derived(JSON.stringify({ metadata, blocks }));
+  const takeSnapshot = (): string => JSON.stringify({ metadata, blocks, trackState });
+  const workingSnapshot = $derived(takeSnapshot());
   const unsavedDirty = $derived(
     lastSavedSnapshot !== null && workingSnapshot !== lastSavedSnapshot,
   );
@@ -86,6 +91,10 @@
       ...(src.coverImageId ? { coverImageId: src.coverImageId } : {}),
     };
     blocks = src.blocks;
+    trackState = {
+      tracks: src.tracks ?? [],
+      ...(src.utcOffsetMinutes !== undefined ? { utcOffsetMinutes: src.utcOffsetMinutes } : {}),
+    };
   }
 
   onMount(async () => {
@@ -101,7 +110,7 @@
       }
     } finally {
       // Baseline for dirty-tracking, captured after any loaded data is applied.
-      lastSavedSnapshot = JSON.stringify({ metadata, blocks });
+      lastSavedSnapshot = takeSnapshot();
       loading = false;
     }
   });
@@ -196,6 +205,11 @@
       lng: metadata.lng,
       ...(metadata.tripId ? { tripId: metadata.tripId } : {}),
       ...(metadata.coverImageId ? { coverImageId: metadata.coverImageId } : {}),
+      // Always sent, so removing the last track clears it on the server.
+      tracks: trackState.tracks,
+      ...(trackState.utcOffsetMinutes !== undefined
+        ? { utcOffsetMinutes: trackState.utcOffsetMinutes }
+        : {}),
       blocks,
     };
   }
@@ -261,7 +275,7 @@
       await api.publishPost(postId);
       status = 'published';
       hasPendingDraft = false;
-      lastSavedSnapshot = JSON.stringify({ metadata, blocks });
+      lastSavedSnapshot = takeSnapshot();
       push('/admin');
     } catch (err) {
       saveFailed(err);
@@ -281,7 +295,7 @@
       seedFrom(post);
       status = post.status;
       hasPendingDraft = false;
-      lastSavedSnapshot = JSON.stringify({ metadata, blocks });
+      lastSavedSnapshot = takeSnapshot();
       saveState = 'idle';
       reseedToken += 1; // remount the form onto the reverted state
 
@@ -353,6 +367,11 @@
         </div>
         {#key reseedToken}
           <MetadataSidebar {metadata} {trips} onChange={(next) => (metadata = next)} {pickImage} />
+          <TrackPanel
+            value={trackState}
+            imageIds={usedImageIds}
+            onChange={(next) => (trackState = next)}
+          />
         {/key}
       </aside>
     </div>
