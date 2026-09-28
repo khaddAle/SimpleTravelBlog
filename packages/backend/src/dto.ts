@@ -190,8 +190,15 @@ export interface TrackLike {
   stats: TrackStats;
 }
 
-export function toTrackDto(_t: TrackLike): TrackDto {
-  throw new Error('not implemented');
+/** Admin DTO of a track; points and the storage key stay server-side. */
+export function toTrackDto(t: TrackLike): TrackDto {
+  const { distance, ascent, descent, movingMs, start, end, minEle, maxEle } = t.stats;
+  return {
+    id: t.shortId,
+    originalFilename: t.originalFilename,
+    name: t.name,
+    stats: { distance, ascent, descent, movingMs, start, end, minEle, maxEle },
+  };
 }
 
 export interface TripLike {

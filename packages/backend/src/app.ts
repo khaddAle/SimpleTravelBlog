@@ -16,6 +16,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerPostRoutes } from './routes/posts.js';
 import { registerTripRoutes } from './routes/trips.js';
 import { registerImageRoutes } from './routes/images.js';
+import { registerTrackRoutes } from './routes/tracks.js';
 import { registerUserRoutes } from './routes/users.js';
 import { registerSettingsRoutes } from './routes/settings.js';
 import { registerPublicRoutes } from './routes/public.js';
@@ -79,6 +80,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerPostRoutes(app, ctx);
   registerTripRoutes(app, ctx);
   registerImageRoutes(app, ctx);
+  registerTrackRoutes(app, ctx);
   registerUserRoutes(app, ctx);
   registerSettingsRoutes(app, ctx);
   registerPublicRoutes(app, ctx);
