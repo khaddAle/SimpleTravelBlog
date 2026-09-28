@@ -27,8 +27,11 @@ export function fmtOffset(min: number): string {
   return `UTC${sign}${Math.floor(a / 60)}${a % 60 ? `:${pad(a % 60)}` : ''}`;
 }
 
-export function niceStep(_range: number, _target: number): number {
-  throw new Error('not implemented');
+/** Axis step from 1/2/2.5/5 × 10ⁿ giving about `target` ticks over `range`. */
+export function niceStep(range: number, target: number): number {
+  const raw = range / target;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  return [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? 10 * mag;
 }
 
 /** 9 648 000 ms → "2:41 h". */

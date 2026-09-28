@@ -410,8 +410,9 @@ export const api = {
     );
     return res.posts;
   },
-  async publicPostTracks(_id: string): Promise<PublicTrackData> {
-    throw new Error('not implemented');
+  /** GPS tracks + photo placement of a published post (404 when it has none). */
+  async publicPostTracks(id: string): Promise<PublicTrackData> {
+    return await request<PublicTrackData>(`/api/public/posts/${id}/tracks`);
   },
   async publicTrips(): Promise<TripDto[]> {
     return (await request<{ trips: TripDto[] }>('/api/public/trips')).trips;

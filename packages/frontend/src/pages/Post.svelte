@@ -6,6 +6,7 @@
   import SiteHeader from '../components/SiteHeader.svelte';
   import SiteFooter from '../components/SiteFooter.svelte';
   import BlockRenderer from '../blocks/BlockRenderer.svelte';
+  import TrackMap from '../components/track/TrackMap.svelte';
 
   let { params }: { params: { id: string } } = $props();
 
@@ -98,6 +99,11 @@
           </a>
         {/if}
       </div>
+      {#if post.tracks?.length}
+        {#key post.id}
+          <TrackMap postId={post.id} />
+        {/key}
+      {/if}
     </div>
 
     {#each post.blocks as block, i (i)}
