@@ -81,7 +81,7 @@ export async function loadPlacement({
   });
 
   const series = tracks.map((t) => fromRows(t.doc.points, t.doc.stats.start));
-  const suggestion = suggestOffset(series, inputs);
+  const suggestion = suggestOffset(series);
   const offset = utcOffsetMinutes ?? suggestion.offset;
   const placed = placePhotos(
     inputs,

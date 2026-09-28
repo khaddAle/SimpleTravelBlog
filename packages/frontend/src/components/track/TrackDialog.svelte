@@ -361,6 +361,7 @@
         {@const size = images?.[photo.imageId]}
         <div
           class="tm-card"
+          class:compact={layout?.compact}
           style:left={layout ? `${layout.left}px` : null}
           style:top={layout ? `${layout.top}px` : null}
           style:width={layout ? `${layout.width}px` : null}
@@ -386,7 +387,11 @@
             {/if}
           </div>
           {#if card.auto}
-            <div class="hold run"></div>
+            <!-- One element per photo: the CSS countdown restarts even when the
+                 next photo of the same spot replaces this one in place. -->
+            {#key photo.index}
+              <div class="hold run"></div>
+            {/key}
           {/if}
         </div>
       {/if}
@@ -476,12 +481,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 24px;
+    padding: 16px;
   }
   .tm-dialog {
     background: var(--surface);
-    width: min(1240px, 100%);
-    height: min(900px, 100%);
+    /* Nearly full screen on any display: only the backdrop margin around it. */
+    width: 100%;
+    height: 100%;
     display: flex;
     flex-direction: column;
     box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
@@ -595,6 +601,9 @@
     padding: 8px;
     box-shadow: 0 14px 40px -8px rgba(18, 28, 46, 0.55);
     border: 1px solid var(--matedge);
+  }
+  .tm-card.compact {
+    padding: 4px;
   }
   .tm-card img {
     display: block;
@@ -774,6 +783,20 @@
   }
   :global(.mk-photo.active) {
     transform: scale(1.35);
+  }
+  .compact .cap {
+    font-size: 11px;
+    margin-top: 4px;
+  }
+  .compact .x {
+    top: 7px;
+    right: 7px;
+    width: 22px;
+    height: 22px;
+    font-size: 14px;
+  }
+  .compact .hold {
+    margin-top: 4px;
   }
   @media (max-width: 700px) {
     .tm-modal {
