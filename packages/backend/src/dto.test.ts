@@ -10,6 +10,7 @@ import {
   toSettingsDto,
   imageVariantUrl,
   imageIdsInBlocks,
+  toTrackDto,
   DEFAULT_SETTINGS,
   type PostLike,
 } from './dto.js';
@@ -277,5 +278,30 @@ describe('toSettingsDto', () => {
   it('ships a sensible default branding', () => {
     expect(DEFAULT_SETTINGS.siteTitle).toBeTruthy();
     expect(DEFAULT_SETTINGS.accentColor).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+});
+
+describe('toTrackDto', () => {
+  it('maps a stored track to the admin DTO without points or storage keys', () => {
+    const stats = {
+      distance: 1000,
+      ascent: 50,
+      descent: 40,
+      movingMs: 600_000,
+      start: 1,
+      end: 2,
+      minEle: 0,
+      maxEle: 50,
+    };
+    expect(
+      toTrackDto({
+        shortId: 'trk001',
+        originalFilename: 'lauf.gpx',
+        name: 'Lauf',
+        stats,
+        gpxKey: 'tracks/trk001.gpx',
+        points: [[1, 2, 3, 4, 5]],
+      }),
+    ).toEqual({ id: 'trk001', originalFilename: 'lauf.gpx', name: 'Lauf', stats });
   });
 });

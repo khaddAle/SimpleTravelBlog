@@ -9,6 +9,8 @@ import type {
   ImageVariant,
   SettingsDto,
   UserListItem,
+  TrackDto,
+  TrackStats,
 } from '@stb/shared';
 
 /**
@@ -179,6 +181,17 @@ export function toImageDto(i: ImageLike): ImageDto {
     ...(i.takenAt ? { takenAt: i.takenAt.toISOString() } : {}),
     createdAt: i.createdAt.toISOString(),
   };
+}
+
+export interface TrackLike {
+  shortId: string;
+  originalFilename: string;
+  name: string;
+  stats: TrackStats;
+}
+
+export function toTrackDto(_t: TrackLike): TrackDto {
+  throw new Error('not implemented');
 }
 
 export interface TripLike {
