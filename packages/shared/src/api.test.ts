@@ -593,7 +593,7 @@ describe('trackPreviewRequestSchema / trackPreviewResponseSchema', () => {
 
   it('returns the suggestion, the offset used and the placement per photo', () => {
     const res = {
-      suggestion: { offset: 120, reason: '7/9 Fotos im Track' },
+      suggestion: { offset: 120, reason: 'Längengrad + Sommerzeit' },
       utcOffsetMinutes: 120,
       photos: [{ imageId: 'a', track: 1, t: 0, where: 'notime' }],
     };

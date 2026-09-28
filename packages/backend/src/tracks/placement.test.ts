@@ -101,7 +101,7 @@ describe('loadPlacement', () => {
       refs: [{ trackId: 'trk001', label: 'Anna' }],
       imageIds: ['img1'],
     });
-    expect(res.suggestion).toEqual({ offset: 120, reason: '1/1 Fotos im Track' });
+    expect(res.suggestion).toEqual({ offset: 120, reason: 'Längengrad + Sommerzeit' });
     expect(res.utcOffsetMinutes).toBe(120);
     expect(res.photos[0]).toMatchObject({ where: 'on', t: T0 + 300_000 });
   });

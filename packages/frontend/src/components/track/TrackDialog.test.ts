@@ -221,6 +221,38 @@ describe('TrackDialog', () => {
     expect(document.querySelector('.tm-card')).toBeNull();
   });
 
+  it('restarts the 5 s countdown for each photo of the same spot', async () => {
+    const user = userEvent.setup();
+    const data = twoTracks();
+    // Both land on Anna's start (e.g. taken before it): one spot, two photos.
+    data.photos = [
+      { imageId: 'img1', track: 0, t: T0, where: 'before' },
+      { imageId: 'img2', track: 0, t: T0, where: 'before' },
+    ];
+    open(data);
+    await user.click(screen.getByRole('button', { name: 'Fotos einblenden' }));
+    await user.click(screen.getByRole('button', { name: 'Abspielen' }));
+    runFrame(10);
+    const first = document.querySelector('.tm-card .hold');
+    expect(first).not.toBeNull();
+    runFrame(10 + 5000);
+    expect(document.querySelector('.tm-card img')!.getAttribute('src')).toContain('/img2/');
+    const second = document.querySelector('.tm-card .hold');
+    expect(second).not.toBeNull();
+    // A fresh element, so the CSS countdown runs again from full.
+    expect(second).not.toBe(first);
+  });
+
+  it('uses the compact photo card on a phone-sized map', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390);
+    const user = userEvent.setup();
+    open();
+    await user.click(screen.getByRole('button', { name: 'Fotos einblenden' }));
+    clickHandler(markerCalls()[2]!)();
+    await waitFor(() => expect(document.querySelector('.tm-card')).not.toBeNull());
+    expect(document.querySelector('.tm-card')).toHaveClass('compact');
+  });
+
   it('opens a photo spot on click and steps through its photos', async () => {
     const user = userEvent.setup();
     const data = twoTracks();

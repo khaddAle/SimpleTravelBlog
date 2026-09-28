@@ -103,7 +103,7 @@ beforeEach(() => {
     stats: { distance: 1, ascent: 1, descent: 1, movingMs: 1, start: 0, end: 1, minEle: 0, maxEle: 1 },
   }));
   vi.spyOn(api, 'previewTracks').mockResolvedValue({
-    suggestion: { offset: 120, reason: '0/0 Fotos im Track' },
+    suggestion: { offset: 120, reason: 'Längengrad + Sommerzeit' },
     utcOffsetMinutes: 120,
     photos: [],
   });

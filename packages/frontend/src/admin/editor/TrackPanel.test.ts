@@ -22,7 +22,7 @@ const dto = (id: string, name: string): TrackDto => ({
   stats,
 });
 const previewOf = (over: Partial<TrackPreviewResponse> = {}): TrackPreviewResponse => ({
-  suggestion: { offset: 120, reason: '2/3 Fotos im Track' },
+  suggestion: { offset: 120, reason: 'Längengrad + Sommerzeit' },
   utcOffsetMinutes: 120,
   photos: [
     { imageId: 'a', track: 0, t: 0, where: 'on' },
@@ -128,7 +128,7 @@ describe('TrackPanel', () => {
         imageIds: ['a', 'b', 'c'],
       }),
     );
-    expect(await screen.findByText('Vorschlag: UTC+2 (2/3 Fotos im Track)')).toBeInTheDocument();
+    expect(await screen.findByText('Vorschlag: UTC+2 (Längengrad + Sommerzeit)')).toBeInTheDocument();
     expect(screen.getByText('Fotos: 1 Anna · 1 am Start · 1 am Ende')).toBeInTheDocument();
   });
 

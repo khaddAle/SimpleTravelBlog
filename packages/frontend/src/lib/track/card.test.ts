@@ -16,7 +16,16 @@ describe('cardLayout', () => {
   it('is about a third of the map wide, within 180–300 px', () => {
     expect(cardLayout({ x: 0, y: 0 }, 1000, 800, 0.75).width).toBe(300);
     expect(cardLayout({ x: 0, y: 0 }, 600, 800, 0.75).width).toBeCloseTo(216);
-    expect(cardLayout({ x: 0, y: 0 }, 360, 800, 0.75).width).toBe(180);
+    expect(cardLayout({ x: 0, y: 0 }, 600, 800, 0.75).compact).toBe(false);
+  });
+
+  it('is smaller and compact on phone-sized maps', () => {
+    const phone = cardLayout({ x: 0, y: 0 }, 390, 500, 0.75);
+    expect(phone.compact).toBe(true);
+    expect(phone.width).toBeCloseTo(156);
+    // 4 px padding each side, one-line caption.
+    expect(phone.height).toBeCloseTo((156 - 8) * 0.75 + 8 + 28);
+    expect(cardLayout({ x: 0, y: 0 }, 300, 500, 0.75).width).toBe(130);
   });
 
   it('never grows taller than the map', () => {

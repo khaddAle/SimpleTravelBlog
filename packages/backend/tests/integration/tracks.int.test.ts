@@ -230,7 +230,7 @@ describe('tracks integration', () => {
       });
       expect(res.status).toBe(200);
       expect(trackPreviewResponseSchema.parse(res.body)).toEqual({
-        suggestion: { offset: 120, reason: '1/1 Fotos im Track' },
+        suggestion: { offset: 120, reason: 'Längengrad + Sommerzeit' },
         utcOffsetMinutes: 120,
         photos: [
           { imageId: 'img001', track: 0, t: T0 + 120_000, where: 'on' },
