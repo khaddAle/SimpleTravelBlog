@@ -30,6 +30,9 @@ describe('German track formatters', () => {
   it('formats metres rounded with a thousands dot', () => {
     expect(fmtM(1025.4)).toBe('1.025 m');
     expect(fmtM(12.6)).toBe('13 m');
+    // A tick at sea level can come out as -0 (e.g. ceil(-0.4)); never show "-0 m".
+    expect(fmtM(-0)).toBe('0 m');
+    expect(fmtM(-0.4)).toBe('0 m');
   });
 
   it('formats UTC offsets', () => {
