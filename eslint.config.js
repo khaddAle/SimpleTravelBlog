@@ -12,11 +12,12 @@ export default tseslint.config(
       '**/.svelte-kit/**',
       'tests/e2e/playwright-report/**',
       // Local-only trees that are not part of the repo: `design/` holds the
-      // design handoffs (gitignored) and `tools/` the throwaway migration
-      // helpers (git/info/exclude). CI never sees either, so linting them only
-      // ever reddens the local gate.
+      // design handoffs (gitignored), `tools/` the throwaway migration
+      // helpers (git/info/exclude) and `temp/` local POCs (gitignored). CI
+      // never sees them, so linting them only ever reddens the local gate.
       'design/**',
       'tools/**',
+      'temp/**',
     ],
   },
   js.configs.recommended,
