@@ -1,5 +1,5 @@
 import type { TrackSeries } from './build.js';
-import type { TrackPosition } from './interpolate.js';
+import { positionAtTime, type TrackPosition } from './interpolate.js';
 
 export interface PhotoInput {
   /** Original filename; its prefix picks the track. */
@@ -28,23 +28,54 @@ export interface PhotoGroup<P extends PhotoInput> {
   photos: PlacedPhoto<P>[];
 }
 
-export function naiveLocalToUtc(_takenAt: string, _offsetMin: number): number {
-  throw new Error('not implemented');
+/** A naive local time (EXIF style) as UTC ms: UTC = local − offset. */
+export function naiveLocalToUtc(takenAt: string, offsetMin: number): number {
+  return Date.parse(`${takenAt}Z`) - offsetMin * 60_000;
 }
 
-export function trackForFile(_file: string, _prefixes: readonly (string | undefined)[]): number {
-  throw new Error('not implemented');
+/** Which track a filename belongs to: first matching prefix, else track 0. */
+export function trackForFile(file: string, prefixes: readonly (string | undefined)[]): number {
+  const f = file.toLowerCase();
+  const idx = prefixes.findIndex((p) => p && f.startsWith(p.toLowerCase()));
+  return idx < 0 ? 0 : idx;
 }
 
+/**
+ * Place photos on their track. Before start → start; after end or no time → end.
+ * Sorted by time, then filename.
+ */
 export function placePhotos<P extends PhotoInput>(
-  _photos: readonly P[],
-  _tracks: readonly TrackSeries[],
-  _prefixes: readonly (string | undefined)[],
-  _offsetMin: number,
+  photos: readonly P[],
+  tracks: readonly TrackSeries[],
+  prefixes: readonly (string | undefined)[],
+  offsetMin: number,
 ): PlacedPhoto<P>[] {
-  throw new Error('not implemented');
+  if (!tracks.length) return [];
+  return photos
+    .map((p): PlacedPhoto<P> => {
+      const track = trackForFile(p.file, prefixes.slice(0, tracks.length));
+      const tr = tracks[track]!;
+      const start = tr.t[0]!;
+      const end = tr.t[tr.t.length - 1]!;
+      if (!p.takenAt) {
+        return { ...p, track, utc: null, where: 'notime', t: end, pos: positionAtTime(tr, end) };
+      }
+      const utc = naiveLocalToUtc(p.takenAt, offsetMin);
+      const where = utc < start ? 'before' : utc > end ? 'after' : 'on';
+      const t = Math.min(end, Math.max(start, utc));
+      return { ...p, track, utc, where, t, pos: positionAtTime(tr, t) };
+    })
+    .sort((a, b) => a.t - b.t || a.file.localeCompare(b.file));
 }
 
-export function groupPhotos<P extends PhotoInput>(_placed: readonly PlacedPhoto<P>[]): PhotoGroup<P>[] {
-  throw new Error('not implemented');
+/** Photos sharing a spot (e.g. everything clamped to the end) become one marker. */
+export function groupPhotos<P extends PhotoInput>(placed: readonly PlacedPhoto<P>[]): PhotoGroup<P>[] {
+  const groups = new Map<string, PhotoGroup<P>>();
+  for (const p of placed) {
+    const key = `${p.track}:${p.pos.lat.toFixed(5)}:${p.pos.lon.toFixed(5)}`;
+    const group = groups.get(key);
+    if (group) group.photos.push(p);
+    else groups.set(key, { key, track: p.track, pos: p.pos, t: p.t, photos: [p] });
+  }
+  return [...groups.values()];
 }
