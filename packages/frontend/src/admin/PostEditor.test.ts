@@ -324,6 +324,34 @@ describe('PostEditor (edit)', () => {
     expect(push).toHaveBeenCalledWith('/admin');
   });
 
+  it('publishes only after an in-flight autosave has landed', async () => {
+    // Otherwise the late autosave reaches the server after the publish and is
+    // stashed as a pending draft of the freshly published post.
+    const user = userEvent.setup();
+    vi.spyOn(api, 'getPost').mockResolvedValue(samplePost());
+    let land!: () => void;
+    const saveDraft = vi
+      .spyOn(api, 'savePostDraft')
+      .mockImplementationOnce(
+        () => new Promise((r) => (land = () => r({ savedAt: 'x', hasPendingDraft: false }))),
+      )
+      .mockResolvedValue({ savedAt: 'y', hasPendingDraft: false });
+    const pub = vi.spyOn(api, 'publishPost').mockResolvedValue(samplePost({ status: 'published' }));
+    render(PostEditor, { params: { id: 'p1' } });
+    const title = await screen.findByLabelText('Titel');
+    await user.type(title, ' neu');
+    await flushAutosave();
+    await waitFor(() => expect(saveDraft).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole('button', { name: 'Veröffentlichen' }));
+    expect(saveDraft).toHaveBeenCalledTimes(1);
+    expect(pub).not.toHaveBeenCalled();
+
+    land();
+    await waitFor(() => expect(pub).toHaveBeenCalledWith('p1'));
+    expect(saveDraft).toHaveBeenCalledTimes(2);
+  });
+
   it('flags a pending draft after autosaving an edit to a published post', async () => {
     const user = userEvent.setup();
     vi.spyOn(api, 'getPost').mockResolvedValue(samplePost({ status: 'published' }));

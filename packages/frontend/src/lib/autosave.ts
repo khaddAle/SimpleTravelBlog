@@ -20,8 +20,8 @@ export interface Autosaver {
   schedule(): void;
   /** Save now and resolve when the in-flight (and any coalesced) save settles. */
   flush(): Promise<void>;
-  /** Drop any pending save without firing it. */
-  cancel(): void;
+  /** Drop any pending save without firing it; resolves once an in-flight save has settled. */
+  cancel(): Promise<void>;
 }
 
 export interface AutosaverOptions {
@@ -92,9 +92,10 @@ export function createAutosaver(opts: AutosaverOptions): Autosaver {
     });
   }
 
-  function cancel(): void {
+  function cancel(): Promise<void> {
     clearTimers();
     pendingAgain = false;
+    return Promise.resolve();
   }
 
   return { schedule, flush, cancel };

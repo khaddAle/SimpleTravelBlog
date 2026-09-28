@@ -92,6 +92,28 @@ describe('createAutosaver', () => {
     expect(save).not.toHaveBeenCalled();
   });
 
+  it('cancel waits for an in-flight save without starting another', async () => {
+    const first = deferred();
+    const save = vi
+      .fn()
+      .mockImplementationOnce(() => first.promise)
+      .mockResolvedValue(undefined);
+    const a = createAutosaver({ ...OPTS, save });
+
+    a.schedule();
+    await vi.advanceTimersByTimeAsync(2000); // save #1 in flight
+    a.schedule(); // an edit during flight would coalesce a trailing save
+    let settled = false;
+    void a.cancel().then(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+
+    first.resolve();
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(settled).toBe(true);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
   it('still settles flush callers when a save rejects (errors never hang it)', async () => {
     const save = vi.fn().mockRejectedValue(new Error('boom'));
     const a = createAutosaver({ ...OPTS, save });
