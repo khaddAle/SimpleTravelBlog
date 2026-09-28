@@ -305,3 +305,47 @@ describe('toTrackDto', () => {
     ).toEqual({ id: 'trk001', originalFilename: 'lauf.gpx', name: 'Lauf', stats });
   });
 });
+
+describe('track fields on posts', () => {
+  const tracks = [
+    { trackId: 'trk001', label: 'Anna', prefix: 'IMG_' },
+    { trackId: 'trk002', label: 'Ben', prefix: null },
+  ];
+
+  it('maps tracks (dropping empty prefixes) and the UTC offset', () => {
+    const dto = toPostDto({ ...basePost, tracks, utcOffsetMinutes: 120 });
+    expect(dto.tracks).toEqual([
+      { trackId: 'trk001', label: 'Anna', prefix: 'IMG_' },
+      { trackId: 'trk002', label: 'Ben' },
+    ]);
+    expect(dto.utcOffsetMinutes).toBe(120);
+  });
+
+  it('omits both when unset, and keeps a zero offset', () => {
+    const none = toPostDto({ ...basePost, tracks: [], utcOffsetMinutes: null });
+    expect('tracks' in none).toBe(false);
+    expect('utcOffsetMinutes' in none).toBe(false);
+    expect(toPostDto({ ...basePost, utcOffsetMinutes: 0 }).utcOffsetMinutes).toBe(0);
+  });
+
+  it('maps them on the draft snapshot too', () => {
+    const dto = toPostDto({
+      ...basePost,
+      status: 'published',
+      draft: {
+        title: 'Neu',
+        blocks: [],
+        postDate: new Date('2026-05-01T00:00:00.000Z'),
+        country: 'DE',
+        placeName: 'Ort',
+        lat: 1,
+        lng: 2,
+        tracks: [tracks[0]!],
+        utcOffsetMinutes: -60,
+        savedAt: new Date('2026-05-02T00:00:00.000Z'),
+      },
+    });
+    expect(dto.draft?.tracks).toEqual([{ trackId: 'trk001', label: 'Anna', prefix: 'IMG_' }]);
+    expect(dto.draft?.utcOffsetMinutes).toBe(-60);
+  });
+});
