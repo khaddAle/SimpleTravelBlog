@@ -19,8 +19,8 @@ export interface CardLayout {
 
 /**
  * Where the photo card sits on a `w`×`h` map: on the side away from its spot
- * `pt`. It scales with the map: 30 % of its width (at least 180 px, at most
- * 640 px), and at most half its height unless that would undercut the minimum
+ * `pt`. It scales with the map: 40 % of its width (at least 180 px, at most
+ * 640 px), and at most 70 % of its height unless that would undercut the minimum
  * width. On phone-sized maps 45 % (at least 130 px) with thinner padding. It
  * never grows taller than the map. `ratio` is the photo's height / width.
  */
@@ -31,8 +31,8 @@ export function cardLayout(pt: { x: number; y: number }, w: number, h: number, r
   const caption = compact ? 28 : 40;
   const minW = compact ? 130 : 180;
   const widthFor = (cardH: number) => (cardH - pad - caption) / ratio + pad;
-  const wanted = Math.max(minW, w * (compact ? 0.45 : 0.3));
-  const width = Math.min(MAX_WIDTH, wanted, Math.max(minW, widthFor(h / 2)), widthFor(h - 2 * MARGIN));
+  const wanted = Math.max(minW, w * (compact ? 0.45 : 0.4));
+  const width = Math.min(MAX_WIDTH, wanted, Math.max(minW, widthFor(h * 0.7)), widthFor(h - 2 * MARGIN));
   const height = (width - pad) * ratio + pad + caption;
   const left = pt.x < w / 2 ? w - width - MARGIN : ZOOM_CONTROL_SPACE;
   const top = pt.y > h / 2 ? MARGIN : Math.max(MARGIN, h - height - MARGIN);
