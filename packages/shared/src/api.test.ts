@@ -22,6 +22,13 @@ import {
   createUserRequestSchema,
   updateUserRequestSchema,
   imageVariantSchema,
+  utcOffsetMinutesSchema,
+  postTrackRefSchema,
+  trackStatsSchema,
+  trackDtoSchema,
+  publicTrackDataSchema,
+  trackPreviewRequestSchema,
+  trackPreviewResponseSchema,
 } from './api.js';
 
 describe('scalar schemas', () => {
@@ -417,6 +424,180 @@ describe('updateUserRequestSchema', () => {
   });
   it('accepts a single field', () => {
     expect(updateUserRequestSchema.parse({ deactivated: true }).deactivated).toBe(true);
+  });
+});
+
+describe('track fields on posts', () => {
+  const base = {
+    title: 'Berge',
+    postDate: '2026-05-01T00:00:00.000Z',
+    country: 'DE',
+    placeName: 'Zugspitze',
+    lat: 47.42,
+    lng: 10.98,
+    blocks: [],
+  };
+  const tracks = [
+    { trackId: 't1', label: 'Anna', prefix: 'IMG_' },
+    { trackId: 't2', label: 'Ben', prefix: 'PXL_' },
+  ];
+
+  it('accepts up to two tracks and a UTC offset on create, update and draft', () => {
+    expect(createPostRequestSchema.parse({ ...base, tracks, utcOffsetMinutes: 120 })).toMatchObject({
+      tracks,
+      utcOffsetMinutes: 120,
+    });
+    expect(updatePostRequestSchema.parse({ tracks: [], utcOffsetMinutes: -330 })).toEqual({
+      tracks: [],
+      utcOffsetMinutes: -330,
+    });
+    expect(
+      postDraftSchema.parse({ ...base, tracks, utcOffsetMinutes: 0, savedAt: 'x' }).tracks,
+    ).toEqual(tracks);
+  });
+
+  it('leaves both fields undefined when omitted', () => {
+    const parsed = createPostRequestSchema.parse(base);
+    expect(parsed.tracks).toBeUndefined();
+    expect(parsed.utcOffsetMinutes).toBeUndefined();
+  });
+
+  it('rejects a third track and a repeated track', () => {
+    const three = [...tracks, { trackId: 't3', label: 'Cleo' }];
+    expect(() => createPostRequestSchema.parse({ ...base, tracks: three })).toThrow();
+    expect(() =>
+      createPostRequestSchema.parse({ ...base, tracks: [tracks[0], { ...tracks[0], label: 'X' }] }),
+    ).toThrow();
+  });
+
+  it('carries tracks and the offset on the post DTO', () => {
+    const dto = postDtoSchema.parse({
+      ...base,
+      id: 'p1',
+      status: 'published',
+      createdAt: 'x',
+      updatedAt: 'x',
+      tracks,
+      utcOffsetMinutes: 120,
+    });
+    expect(dto.tracks).toEqual(tracks);
+    expect(dto.utcOffsetMinutes).toBe(120);
+  });
+});
+
+describe('utcOffsetMinutesSchema', () => {
+  it('accepts −12 h to +14 h in 30 min steps', () => {
+    expect(utcOffsetMinutesSchema.parse(-720)).toBe(-720);
+    expect(utcOffsetMinutesSchema.parse(840)).toBe(840);
+    expect(utcOffsetMinutesSchema.parse(330)).toBe(330);
+  });
+
+  it('rejects values off the grid or out of range', () => {
+    expect(() => utcOffsetMinutesSchema.parse(345)).toThrow();
+    expect(() => utcOffsetMinutesSchema.parse(870)).toThrow();
+    expect(() => utcOffsetMinutesSchema.parse(-750)).toThrow();
+    expect(() => utcOffsetMinutesSchema.parse(1.5)).toThrow();
+  });
+});
+
+describe('postTrackRefSchema', () => {
+  it('needs a trackId and a 1–40 char label; prefix is optional', () => {
+    expect(postTrackRefSchema.parse({ trackId: 't1', label: 'Anna' })).toEqual({
+      trackId: 't1',
+      label: 'Anna',
+    });
+    expect(() => postTrackRefSchema.parse({ trackId: 't1', label: '' })).toThrow();
+    expect(() => postTrackRefSchema.parse({ trackId: 't1', label: 'x'.repeat(41) })).toThrow();
+    expect(() => postTrackRefSchema.parse({ trackId: '', label: 'Anna' })).toThrow();
+  });
+
+  it('trims the label and rejects a blank one', () => {
+    expect(postTrackRefSchema.parse({ trackId: 't1', label: '  Anna ' }).label).toBe('Anna');
+    expect(() => postTrackRefSchema.parse({ trackId: 't1', label: '   ' })).toThrow();
+  });
+});
+
+const stats = {
+  distance: 19520,
+  ascent: 1025,
+  descent: 1018,
+  movingMs: 9_648_000,
+  start: Date.UTC(2026, 8, 12, 8, 0),
+  end: Date.UTC(2026, 8, 12, 12, 0),
+  minEle: 2,
+  maxEle: 820,
+};
+
+describe('trackStatsSchema / trackDtoSchema', () => {
+  it('accepts stats with epoch-ms start and end', () => {
+    expect(trackStatsSchema.parse(stats)).toEqual(stats);
+    expect(() => trackStatsSchema.parse({ ...stats, distance: -1 })).toThrow();
+    expect(() => trackStatsSchema.parse({ ...stats, start: '2026-09-12' })).toThrow();
+  });
+
+  it('describes an uploaded track for the admin', () => {
+    const dto = { id: 't1', originalFilename: 'lauf.gpx', name: 'Morgenlauf', stats };
+    expect(trackDtoSchema.parse(dto)).toEqual(dto);
+  });
+});
+
+describe('publicTrackDataSchema', () => {
+  const data = {
+    utcOffsetMinutes: 120,
+    tracks: [
+      {
+        label: 'Anna',
+        stats,
+        moving: [[stats.start, stats.end]],
+        points: [
+          [69.8, 20.7, 10.5, 0, 0],
+          [69.81, 20.71, 12, 30, 1234.5],
+        ],
+      },
+    ],
+    photos: [{ imageId: 'img1', track: 0, t: stats.start, where: 'on' }],
+  };
+
+  it('accepts tracks with rows and placed photos', () => {
+    expect(publicTrackDataSchema.parse(data)).toEqual(data);
+  });
+
+  it('rejects malformed rows and unknown placements', () => {
+    const badRow = structuredClone(data);
+    badRow.tracks[0]!.points[0] = [69.8, 20.7, 10.5, 0];
+    expect(() => publicTrackDataSchema.parse(badRow)).toThrow();
+    expect(() =>
+      publicTrackDataSchema.parse({ ...data, photos: [{ ...data.photos[0], where: 'somewhere' }] }),
+    ).toThrow();
+    expect(() =>
+      publicTrackDataSchema.parse({ ...data, photos: [{ ...data.photos[0], track: 2 }] }),
+    ).toThrow();
+  });
+
+  it('does not carry filenames or capture times', () => {
+    const parsed = publicTrackDataSchema.parse({
+      ...data,
+      photos: [{ ...data.photos[0], originalFilename: 'IMG_1.jpg', takenAt: 'x' }],
+    });
+    expect(parsed.photos[0]).toEqual(data.photos[0]);
+  });
+});
+
+describe('trackPreviewRequestSchema / trackPreviewResponseSchema', () => {
+  it('takes 1–2 track refs, an optional offset and the post’s image ids', () => {
+    const req = { tracks: [{ trackId: 't1', label: 'Anna' }], imageIds: ['a', 'b'] };
+    expect(trackPreviewRequestSchema.parse(req)).toEqual(req);
+    expect(trackPreviewRequestSchema.parse({ ...req, utcOffsetMinutes: 60 }).utcOffsetMinutes).toBe(60);
+    expect(() => trackPreviewRequestSchema.parse({ ...req, tracks: [] })).toThrow();
+  });
+
+  it('returns the suggestion, the offset used and the placement per photo', () => {
+    const res = {
+      suggestion: { offset: 120, reason: '7/9 Fotos im Track' },
+      utcOffsetMinutes: 120,
+      photos: [{ imageId: 'a', track: 1, t: 0, where: 'notime' }],
+    };
+    expect(trackPreviewResponseSchema.parse(res)).toEqual(res);
   });
 });
 

@@ -232,6 +232,15 @@ export const imageListQuerySchema = paginationQuerySchema.extend({
 });
 export type ImageListQuery = z.infer<typeof imageListQuerySchema>;
 
+// --- tracks ---
+export const utcOffsetMinutesSchema = z.never();
+export const postTrackRefSchema = z.never();
+export const trackStatsSchema = z.never();
+export const trackDtoSchema = z.never();
+export const publicTrackDataSchema = z.never();
+export const trackPreviewRequestSchema = z.never();
+export const trackPreviewResponseSchema = z.never();
+
 // --- users ---
 export const createUserRequestSchema = z.object({
   username: z.string().min(1).max(64),
