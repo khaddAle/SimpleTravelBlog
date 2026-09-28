@@ -136,3 +136,31 @@ export async function publish(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Veröffentlichen' }).click();
   await expect(page).toHaveURL(/#\/admin$/);
 }
+
+/**
+ * Synthesize a small GPX track (a straight walk north, a point every 5 s) for
+ * the track journeys. `withTime: false` drops the timestamps, which the
+ * upload must reject.
+ */
+export function makeGpxUpload(
+  name: string,
+  { points = 360, withTime = true }: { points?: number; withTime?: boolean } = {},
+): { name: string; mimeType: string; buffer: Buffer } {
+  const start = Date.UTC(2026, 8, 12, 8, 0);
+  const pts: string[] = [];
+  for (let i = 0; i < points; i++) {
+    const time = withTime
+      ? `<time>${new Date(start + i * 5000).toISOString().replace('.000', '')}</time>`
+      : '';
+    pts.push(
+      `<trkpt lat="${(69.8 + i * 1e-4).toFixed(6)}" lon="20.7"><ele>${10 + i}</ele>${time}</trkpt>`,
+    );
+  }
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="e2e" xmlns="http://www.topografix.com/GPX/1/1">
+<trk><name>Uferweg</name><trkseg>
+${pts.join('\n')}
+</trkseg></trk></gpx>
+`;
+  return { name, mimeType: 'application/gpx+xml', buffer: Buffer.from(xml) };
+}
