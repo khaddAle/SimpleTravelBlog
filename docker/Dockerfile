@@ -7,7 +7,7 @@
 # resolves; the server is pointed at the built SPA via FRONTEND_DIST.
 
 # --- build: install all deps, build shared -> frontend -> backend, prune ------
-FROM node:24.19.0-bookworm-slim AS build
+FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS build
 WORKDIR /app
 
 # Toolchain for native module rebuilds (argon2's source fallback). Lives only in
@@ -36,7 +36,7 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # --- runtime: slim image carrying only the built app + prod node_modules ------
-FROM node:24.19.0-bookworm-slim
+FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
 ENV NODE_ENV=production \
     PORT=4000 \
     FRONTEND_DIST=/app/packages/frontend/dist
@@ -58,6 +58,13 @@ COPY --from=build /app/packages/shared/dist ./packages/shared/dist
 COPY --from=build /app/packages/backend/package.json ./packages/backend/
 COPY --from=build /app/packages/backend/dist ./packages/backend/dist
 COPY --from=build /app/packages/frontend/dist ./packages/frontend/dist
+
+# The runtime only ever runs `node`. Strip the package managers the base image
+# ships (npm, npx, corepack, yarn 1) so their bundled deps leave the attack
+# surface and the image scan.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+      /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-v*
 
 EXPOSE 4000
 USER node

@@ -15,8 +15,8 @@ runtime from Node 22 to 24; `npm audit` reports 0 vulnerabilities.
 ## Runtime
 | | Version | Notes |
 |---|---|---|
-| Node | `24.19.0` (Krypton, Active LTS) | ARM64 native. Pinned in `.nvmrc`, Docker base, CI setup-node. Moved off 22 (Jod) on 2026-08-13: 22 entered maintenance 2025-10-21, 24 is Active LTS until 2026-10-20 (EOL 2028-04-30). |
-| Base image | `node:24.19.0-bookworm-slim` (linux/arm64) | glibc base for sharp's prebuilt `@img` binaries + argon2. sharp bundles its own libvips (incl. HEIF), so no image libs are apt-installed. Alpine (musl) rejected. |
+| Node | `24.21.0` (Krypton, Maintenance LTS) | ARM64 native. Pinned in `.nvmrc`, Docker base, CI setup-node. Moved off 22 (Jod) on 2026-08-13: 22 entered maintenance 2025-10-21, 24 was Active LTS until 2026-10-20, now Maintenance LTS (EOL 2028-04-30). |
+| Base image | `node:24.21.0-trixie-slim` (Debian 13, linux/arm64), pinned by digest | glibc base for sharp's prebuilt `@img` binaries + argon2. sharp bundles its own libvips (incl. HEIF), so no image libs are apt-installed. The runtime stage strips npm, npx, corepack and yarn. Alpine (musl) rejected. |
 
 ## Backend dependencies
 | Package | Version | Why |
@@ -96,7 +96,7 @@ on every PR that touches the Dockerfile, `.nvmrc` or a manifest.
 
 ## Deliberately rejected
 - **Alpine base image** — sharp's prebuilt `@img` binaries are glibc-built (musl
-  needs separate variants) and argon2 compiles cleanly against glibc; bookworm-slim
+  needs separate variants) and argon2 compiles cleanly against glibc; Debian slim
   keeps the native toolchain simple.
 - **Drag-and-drop block reorder** — ▲/▼ only (target picture).
 - **i18n framework** — German-only, inline strings.
