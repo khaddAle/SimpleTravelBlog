@@ -24,14 +24,14 @@
     "cookie-signature": "1.2.2",
     "dotenv": "17.4.2",
     "exif-reader": "2.0.3",
-    "fastify": "5.11.0",
+    "fastify": "5.12.2",
     "heic-convert": "2.1.0",
     "ioredis": "5.11.1",
     "mongoose": "9.8.1",
     "nanoid": "5.1.16",
     "p-limit": "7.3.1",
     "pino": "10.3.1",
-    "sharp": "0.35.3",
+    "sharp": "0.35.5",
     "zod": "4.4.3"
   },
   "devDependencies": {
