@@ -34,7 +34,9 @@ No `jq` / `node -e` / `python -c` on this machine. Parse the registry JSON with
 # Usage: check_age <pkg> <version>
 # Exits 0 if the version is >= 14 days old, 1 otherwise (or unknown).
 check_age() {
-  pkg="$1"; ver="$2"
+  # Positional args via ${@:N:1}, not the plain dollar-digit form: the skill
+  # loader substitutes those with the skill's own invocation arguments.
+  pkg="${@:1:1}"; ver="${@:2:1}"
   # Pull the version's publish timestamp out of the registry "time" map.
   ts=$(curl -fsSL "https://registry.npmjs.org/${pkg}" \
     | grep -oE "\"${ver//./\\.}\"[[:space:]]*:[[:space:]]*\"[^\"]+\"" \
@@ -60,6 +62,9 @@ check_age() {
 3. **TOO_NEW** → fall back to the newest version in the **same major** that is
    ≥ 14 days old. List versions and their timestamps from the same registry
    document (the `time` map holds every version) and pick the newest passing one.
+   For transitive updates (`npm update <pkg>`), pass `--before=<today minus 14
+   days>` so npm itself only resolves versions old enough. Then age-check every
+   version that changed in `package-lock.json`.
 4. If no version in that major passes → **escalate to the user** (skip vs.
    accept the risk). Do not silently install.
 
